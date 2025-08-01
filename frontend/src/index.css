@@ -12,7 +12,44 @@
   --night-accent-hover: #4f46e5;
   --night-border: rgba(255, 255, 255, 0.1);
   --night-glow: rgba(99, 102, 241, 0.3);
+  --night-hover-bg: rgba(255, 255, 255, 0.1);
+  --night-hover-border: rgba(255, 255, 255, 0.2);
+  --night-card-hover: rgba(255, 255, 255, 0.08);
 }
+
+/* Light theme variables */
+.light {
+  --night-bg: #ffffff;
+  --night-surface: #f8fafc;
+  --night-card: rgba(0, 0, 0, 0.03);
+  --night-text: #1e293b;
+  --night-text-secondary: #64748b;
+  --night-accent: #6366f1;
+  --night-accent-hover: #4f46e5;
+  --night-border: rgba(0, 0, 0, 0.1);
+  --night-glow: rgba(99, 102, 241, 0.2);
+  --night-hover-bg: rgba(99, 102, 241, 0.08);
+  --night-hover-border: rgba(99, 102, 241, 0.3);
+  --night-card-hover: rgba(0, 0, 0, 0.06);
+}
+
+/* Dark theme variables (same as default for compatibility) */
+.dark {
+  --night-bg: #0f0f23;
+  --night-surface: #1a1a2e;
+  --night-card: rgba(255, 255, 255, 0.05);
+  --night-text: #e8e8e8;
+  --night-text-secondary: #a0a0a0;
+  --night-accent: #6366f1;
+  --night-accent-hover: #4f46e5;
+  --night-border: rgba(255, 255, 255, 0.1);
+  --night-glow: rgba(99, 102, 241, 0.3);
+  --night-hover-bg: rgba(255, 255, 255, 0.1);
+  --night-hover-border: rgba(255, 255, 255, 0.2);
+  --night-card-hover: rgba(255, 255, 255, 0.08);
+}
+
+
 
 body {
   margin: 0;

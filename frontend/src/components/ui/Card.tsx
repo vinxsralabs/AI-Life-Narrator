@@ -8,10 +8,10 @@ const cardVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-night-card border-night-border hover:border-night-accent hover:shadow-lg hover:shadow-night-glow",
+        default: "bg-night-card border-night-border hover:bg-night-card-hover hover:border-night-accent hover:shadow-lg hover:shadow-night-glow",
         glass: "bg-white/5 backdrop-blur-md border-white/10 hover:border-white/20 hover:bg-white/10",
-        elevated: "bg-night-surface border-night-border shadow-lg hover:shadow-xl hover:shadow-night-glow hover:border-night-accent",
-        outline: "bg-transparent border-night-border hover:border-night-accent",
+        elevated: "bg-night-surface border-night-border shadow-lg hover:bg-night-card-hover hover:shadow-xl hover:shadow-night-glow hover:border-night-accent",
+        outline: "bg-transparent border-night-border hover:bg-night-hover-bg hover:border-night-accent",
       },
       padding: {
         none: "p-0",

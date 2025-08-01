@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BookOpen, Plus, Star, FileText, BarChart2 } from 'lucide-react';
+import { BookOpen, Plus, Star, FileText, BarChart2, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card';
 import { Skeleton } from '../components/ui/Skeleton';
+import ConfirmationModal from '../components/ui/ConfirmationModal';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
@@ -36,6 +37,16 @@ const Dashboard: React.FC = () => {
   const [recentEntries, setRecentEntries] = useState<Entry[]>([]);
   const [stats, setStats] = useState({ totalEntries: 0, storiesGenerated: 0, weeklyStreak: 0 });
   const [loading, setLoading] = useState(true);
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    entryId: number | null;
+    entryDate: string;
+  }>({
+    isOpen: false,
+    entryId: null,
+    entryDate: ''
+  });
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -66,6 +77,45 @@ const Dashboard: React.FC = () => {
     }
   }, [user]);
 
+  const handleDeleteClick = (entryId: number, date: string) => {
+    setDeleteModal({
+      isOpen: true,
+      entryId,
+      entryDate: date
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal.entryId) return;
+
+    setDeleting(true);
+    try {
+      await axios.delete(`/api/entries/${deleteModal.entryId}`);
+      
+      // Remove the entry from recent entries
+      setRecentEntries(prev => 
+        prev.filter(entry => entry.id !== deleteModal.entryId)
+      );
+      
+      // Update stats
+      setStats(prev => ({
+        ...prev,
+        totalEntries: Math.max(0, prev.totalEntries - 1)
+      }));
+      
+      toast.success('Entry deleted successfully');
+      setDeleteModal({ isOpen: false, entryId: null, entryDate: '' });
+    } catch (error) {
+      toast.error('Failed to delete entry');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModal({ isOpen: false, entryId: null, entryDate: '' });
+  };
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -83,7 +133,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <motion.div 
-      className="container mx-auto px-4 py-8"
+      className="container mx-auto px-4 py-8 pt-24"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
@@ -134,27 +184,49 @@ const Dashboard: React.FC = () => {
           <motion.div className="grid grid-cols-1 md:grid-cols-3 gap-6" variants={containerVariants}>
             {recentEntries.map((entry) => (
               <motion.div key={entry.id} variants={itemVariants}>
-                <Link to={`/story/${entry.id}`}>
-                  <Card className="h-full flex flex-col">
-                    <CardHeader>
-                      <CardTitle className="flex justify-between items-center">
-                        <span>{new Date(entry.date).toLocaleString('en-GB', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })}</span>
-                        {entry.ai_generated_story && <Star size={16} className="text-yellow-400" />}
-                      </CardTitle>
-                      <CardDescription>{entry.story_style}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex-grow">
-                      <p className="line-clamp-3">{entry.text_content || "View generated story..."}</p>
-                    </CardContent>
-                  </Card>
-                </Link>
+                <Card className="h-full flex flex-col">
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <CardTitle className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-night-text">
+                            {entry.date ? (() => {
+                              try {
+                                return new Date(entry.date).toLocaleString(undefined, {
+                                  weekday: 'short',
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                });
+                              } catch (error) {
+                                return entry.date;
+                              }
+                            })() : 'No date'}
+                          </span>
+                          {entry.ai_generated_story && <Star size={16} className="text-yellow-400" />}
+                        </CardTitle>
+                        <CardDescription>{entry.story_style}</CardDescription>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteClick(entry.id, entry.date)}
+                        className="text-red-500 hover:text-red-600 hover:bg-red-500/10 ml-2 flex-shrink-0"
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="flex-grow">
+                    <Link to={`/story/${entry.id}`} className="block">
+                      <p className="line-clamp-3 hover:text-night-accent transition-colors">
+                        {entry.text_content || "View generated story..."}
+                      </p>
+                    </Link>
+                  </CardContent>
+                </Card>
               </motion.div>
             ))}
           </motion.div>
@@ -171,6 +243,18 @@ const Dashboard: React.FC = () => {
           </Card>
         )}
       </motion.div>
+      
+      <ConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Entry"
+        message={`Are you sure you want to delete this entry from ${deleteModal.entryDate}? This action cannot be undone and will also delete any associated audio recordings and images.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        isLoading={deleting}
+        type="danger"
+      />
     </motion.div>
   );
 };

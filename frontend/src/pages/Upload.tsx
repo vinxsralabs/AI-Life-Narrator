@@ -18,6 +18,8 @@ const Upload: React.FC = () => {
   const [transcription, setTranscription] = useState('');
   const [showTranscription, setShowTranscription] = useState(false);
   const [entryId, setEntryId] = useState<number | null>(null);
+  const [liveTranscription, setLiveTranscription] = useState('');
+  const [speechRecognition, setSpeechRecognition] = useState<any>(null);
   
   // Audio recording states
   const [isRecording, setIsRecording] = useState(false);
@@ -44,6 +46,50 @@ const Upload: React.FC = () => {
     setImages(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Initialize speech recognition
+  React.useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = navigator.language || 'en-US';
+
+      recognition.onresult = (event: any) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript + ' ';
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        const currentTranscription = (liveTranscription + finalTranscript + interimTranscript).trim();
+        setLiveTranscription(currentTranscription);
+        
+        // Update the text content in real-time
+        if (currentTranscription) {
+          setTextContent(currentTranscription);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        // Don't show error toast for common issues like no-speech
+        if (event.error !== 'no-speech' && event.error !== 'audio-capture') {
+          toast.error('Speech recognition error. Live transcription may not work properly.');
+        }
+      };
+
+      setSpeechRecognition(recognition);
+    }
+  }, [liveTranscription]);
+
   // Audio recording functions
   const startRecording = async () => {
     try {
@@ -61,18 +107,33 @@ const Upload: React.FC = () => {
         setAudioBlob(audioBlob);
         setAudioUrl(URL.createObjectURL(audioBlob));
         stream.getTracks().forEach(track => track.stop());
+        
+        // Stop speech recognition when recording stops
+        if (speechRecognition) {
+          speechRecognition.stop();
+        }
       };
 
       mediaRecorder.start();
       setIsRecording(true);
       setRecordingTime(0);
+      setLiveTranscription('');
+      
+      // Start speech recognition for live transcription
+      if (speechRecognition) {
+        try {
+          speechRecognition.start();
+        } catch (error) {
+          console.warn('Speech recognition failed to start:', error);
+        }
+      }
       
       // Start timer
       recordingIntervalRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
 
-      toast.success('Recording started!');
+      toast.success('Recording started! Speak clearly for live transcription.');
     } catch (error: any) {
       console.error('Error starting recording:', error);
       if (error.name === 'NotAllowedError') {
@@ -92,6 +153,12 @@ const Upload: React.FC = () => {
       if (recordingIntervalRef.current) {
         clearInterval(recordingIntervalRef.current);
       }
+      
+      // Stop speech recognition
+      if (speechRecognition) {
+        speechRecognition.stop();
+      }
+      
       toast.success('Recording stopped!');
     }
   };
@@ -118,7 +185,14 @@ const Upload: React.FC = () => {
     setIsPlaying(false);
     setTranscription('');
     setShowTranscription(false);
+    setLiveTranscription('');
     setEntryId(null);
+    
+    // Stop speech recognition if active
+    if (speechRecognition) {
+      speechRecognition.stop();
+    }
+    
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -257,7 +331,7 @@ const Upload: React.FC = () => {
 
   return (
     <motion.div 
-      className="container mx-auto px-4 py-8"
+      className="container mx-auto px-4 py-8 pt-24"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
@@ -273,6 +347,11 @@ const Upload: React.FC = () => {
             <CardContent>
               <label htmlFor="text-content" className="flex items-center text-lg font-medium mb-2">
                 <FileText className="inline-block mr-2" /> Your Thoughts
+                {isRecording && liveTranscription && (
+                  <span className="ml-2 text-xs bg-green-500 text-white px-2 py-1 rounded-full animate-pulse">
+                    Live Transcription Active
+                  </span>
+                )}
               </label>
               <div className="relative">
                 <textarea
@@ -280,7 +359,7 @@ const Upload: React.FC = () => {
                   value={textContent}
                   onChange={(e) => setTextContent(e.target.value)}
                   className="w-full h-48 p-3 bg-night-surface rounded-md focus:ring-2 focus:ring-night-accent transition-shadow"
-                  placeholder="What happened today? How are you feeling?"
+                  placeholder={isRecording ? "Speaking... (live transcription active)" : "What happened today? How are you feeling? Start recording for live transcription!"}
                   maxLength={MAX_CHARS}
                 />
                 <p className="absolute bottom-2 right-2 text-xs text-night-text-secondary">
@@ -458,7 +537,7 @@ const Upload: React.FC = () => {
       
       <div className="mt-8 text-center">
         <Button onClick={handleSubmit} loading={isSubmitting} size="lg" className="w-full md:w-auto">
-          <Check className="mr-2" /> Create My Story
+          <Check className="mr-2" /> Post
         </Button>
       </div>
     </motion.div>

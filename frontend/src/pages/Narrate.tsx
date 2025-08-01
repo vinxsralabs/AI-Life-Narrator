@@ -426,7 +426,7 @@ const Narrate: React.FC = () => {
 
   return (
     <motion.div 
-      className="container mx-auto px-4 py-8"
+      className="container mx-auto px-4 py-8 pt-24"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
@@ -498,7 +498,17 @@ const Narrate: React.FC = () => {
                   {timelineData.slice(0, 3).map((day, index) => (
                     <div key={index} className="flex items-center justify-between p-2 bg-night-surface rounded">
                       <span className="text-sm">
-                        {new Date(day.date).toLocaleDateString()}
+                        {day.date ? (() => {
+                          try {
+                            return new Date(day.date).toLocaleDateString(undefined, {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            });
+                          } catch (error) {
+                            return day.date;
+                          }
+                        })() : 'No date'}
                       </span>
                       <span className="text-xs text-night-text-secondary">
                         {day.entry ? 'Has story' : 'No content'}
@@ -673,10 +683,38 @@ const Narrate: React.FC = () => {
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h3 className="font-semibold text-night-text">
-                          {new Date(narrative.start_date).toLocaleDateString()} - {new Date(narrative.end_date).toLocaleDateString()}
+                          {(() => {
+                            try {
+                              const start = narrative.start_date ? new Date(narrative.start_date).toLocaleDateString(undefined, {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              }) : 'No start date';
+                              const end = narrative.end_date ? new Date(narrative.end_date).toLocaleDateString(undefined, {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              }) : 'No end date';
+                              return `${start} - ${end}`;
+                            } catch (error) {
+                              return `${narrative.start_date || 'No start date'} - ${narrative.end_date || 'No end date'}`;
+                            }
+                          })()}
                         </h3>
                         <p className="text-sm text-night-text-secondary">
-                          {new Date(narrative.created_at).toLocaleString()}
+                          {narrative.created_at ? (() => {
+                            try {
+                              return new Date(narrative.created_at).toLocaleString(undefined, {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              });
+                            } catch (error) {
+                              return narrative.created_at;
+                            }
+                          })() : 'No creation date'}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">

@@ -205,11 +205,9 @@ Write a 3-4 stanza poem that poetically describes this day.""",
             print(f"Error generating monthly recap: {e}")
             return None
 
-    async def generate_narrative(
-        self, entries: List[Dict[str, Any]]
-    ) -> Optional[str]:
+    async def generate_narrative(self, entries: List[Dict[str, Any]]) -> Optional[str]:
         """Generate a narrative from timeline entries"""
-        
+
         if not entries:
             return "No entries found for the selected period."
 
@@ -219,7 +217,7 @@ Write a 3-4 stanza poem that poetically describes this day.""",
             date = entry.get("date", "Unknown date")
             text_content = entry.get("text_content", "")
             ai_story = entry.get("ai_generated_story", "")
-            
+
             if text_content or ai_story:
                 content = ai_story if ai_story else text_content
                 entries_summary += f"{date}: {content[:200]}...\n"
@@ -253,17 +251,17 @@ Write a 3-4 stanza poem that poetically describes this day.""",
             # Limit text length to avoid API limits (TTS has a character limit)
             if len(text) > 4000:
                 text = text[:4000] + "..."
-            
+
             print(f"Calling OpenAI TTS with text length: {len(text)}")
-            
+
             response = client.audio.speech.create(
-                model="tts-1",
-                voice="alloy",
-                input=text
+                model="tts-1", voice="alloy", input=text
             )
-            
-            print(f"OpenAI TTS response received, content length: {len(response.content)}")
-            
+
+            print(
+                f"OpenAI TTS response received, content length: {len(response.content)}"
+            )
+
             # The response.content is already bytes
             return response.content
 
@@ -278,12 +276,12 @@ Write a 3-4 stanza poem that poetically describes this day.""",
             # Limit text length to avoid API limits
             if len(text) > 1000:
                 text = text[:1000] + "..."
-            
+
             print(f"Generating image for narrative text length: {len(text)}")
-            
+
             # Create a visual prompt based on the narrative
             visual_prompt = f"Beautiful, artistic illustration representing this life narrative: {text[:200]}... Create a warm, personal, and engaging visual that captures the essence of this story. Use rich colors and emotional depth."
-            
+
             response = client.images.generate(
                 model="dall-e-3",
                 prompt=visual_prompt,
@@ -291,13 +289,103 @@ Write a 3-4 stanza poem that poetically describes this day.""",
                 quality="standard",
                 n=1,
             )
-            
+
             print(f"Image generated successfully: {response.data[0].url}")
             return response.data[0].url
 
         except Exception as e:
             print(f"Error generating narrative image: {e}")
             return None
+
+    async def generate_therapy_response(
+        self,
+        user_message: str,
+        message_type: str,
+        timeline_context: List[Dict[str, Any]],
+        username: str,
+    ) -> Optional[str]:
+        """Generate an empathetic therapy response based on user's message and timeline context"""
+        try:
+            # Prepare timeline context summary
+            timeline_summary = ""
+            if timeline_context:
+                recent_entries = []
+                for entry in timeline_context[:5]:  # Focus on 5 most recent entries
+                    date = entry.get("date", "Unknown date")
+                    content = entry.get("content", "")
+                    ai_story = entry.get("ai_story", "")
+                    style = entry.get("style", "")
+
+                    entry_text = content or ai_story
+                    if entry_text:
+                        recent_entries.append(f"[{date}] {entry_text[:200]}...")
+
+                if recent_entries:
+                    timeline_summary = (
+                        f"\n\nRecent journal entries from {username}:\n"
+                        + "\n".join(recent_entries)
+                    )
+                else:
+                    timeline_summary = (
+                        f"\n\nNote: {username} hasn't shared many recent entries yet."
+                    )
+
+            # Create therapy prompt
+            therapy_prompt = f"""You are an excellent, warm, and empathetic AI therapist specializing in human behavior and mental wellness. You are having a conversation with {username}, who has shared a message with you.
+
+Your role:
+- Provide compassionate, personalized support based on their journal history
+- Offer gentle insights, encouragement, and practical suggestions
+- Be warm, understanding, and motivational without being generic
+- Consider their recent life experiences and emotional patterns
+- Help them process feelings, find clarity, and build resilience
+- Always maintain professional therapeutic boundaries while being genuinely caring
+
+User's current message ({message_type}): "{user_message}"
+{timeline_summary}
+
+Guidelines for your response:
+1. Acknowledge their feelings and validate their experience
+2. Reference relevant patterns or themes from their recent entries when appropriate
+3. Offer personalized insights based on their journey
+4. Provide gentle, actionable suggestions if helpful
+5. Be encouraging and highlight their strengths
+6. Ask thoughtful follow-up questions to help them explore deeper
+7. Keep responses warm but professional (300-500 words max)
+8. If they're struggling, offer specific coping strategies
+9. Celebrate their progress and growth when evident
+10. Always end with support and openness for continued conversation
+
+Remember: This is a real person sharing their inner world. Respond with genuine care, wisdom, and hope."""
+
+            print(
+                f"Generating therapy response for {username}, message type: {message_type}"
+            )
+
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a highly skilled, empathetic AI therapist. Your responses should be warm, personalized, and genuinely helpful. Always consider the user's unique context and journey.",
+                    },
+                    {"role": "user", "content": therapy_prompt},
+                ],
+                max_tokens=600,
+                temperature=0.7,
+            )
+
+            therapy_response = response.choices[0].message.content.strip()
+            print(
+                f"Therapy response generated successfully, length: {len(therapy_response)}"
+            )
+
+            return therapy_response
+
+        except Exception as e:
+            print(f"Error generating therapy response: {e}")
+            # Return a compassionate fallback response
+            return f"I'm sorry, {username}. I'm having a moment of technical difficulty, but I want you to know that I'm here for you. Your feelings and experiences matter deeply. Please feel free to share again, and remember that seeking support is a sign of strength. You're not alone in this journey."
 
 
 # Global AI service instance

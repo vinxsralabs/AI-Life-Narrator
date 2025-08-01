@@ -9,10 +9,10 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-night-accent text-white hover:bg-night-accent-hover focus:ring-night-accent shadow-lg hover:shadow-xl hover:shadow-night-glow",
-        secondary: "bg-night-surface text-night-text border border-night-border hover:bg-night-card hover:border-night-accent",
-        ghost: "text-night-text hover:bg-night-surface hover:text-white",
+        secondary: "bg-night-surface text-night-text border border-night-border hover:bg-night-card-hover hover:border-night-accent",
+        ghost: "text-night-text hover:bg-night-hover-bg hover:border-night-hover-border",
         destructive: "bg-night-error text-white hover:bg-red-600 focus:ring-night-error",
-        outline: "border border-night-border text-night-text hover:bg-night-surface hover:border-night-accent",
+        outline: "border border-night-border text-night-text hover:bg-night-hover-bg hover:border-night-accent",
         glass: "bg-white/5 backdrop-blur-md border border-white/10 text-white hover:bg-white/10 hover:border-white/20",
       },
       size: {

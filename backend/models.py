@@ -190,3 +190,14 @@ class NarrativeHistory(BaseModel):
 class NarrativeHistoryResponse(BaseModel):
     narratives: List[NarrativeHistory]
     total_count: int
+
+
+# Therapy models
+class TherapyChatRequest(BaseModel):
+    message: str
+    message_type: str = "text"  # "text" or "audio"
+
+
+class TherapyChatResponse(BaseModel):
+    response: str
+    timestamp: datetime

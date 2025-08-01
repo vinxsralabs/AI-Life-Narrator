@@ -12,6 +12,8 @@ import {
   Menu,
   X,
   Mic,
+  PlusCircle,
+  Heart,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -26,8 +28,9 @@ const Navbar: React.FC = () => {
   const navItems = [
     { path: '/dashboard', label: 'Home', icon: Home },
     { path: '/timeline', label: 'Timeline', icon: Calendar },
-    { path: '/upload', label: 'Create', icon: Upload },
+    { path: '/upload', label: 'Create', icon: PlusCircle },
     { path: '/narrate', label: 'Narrate', icon: Mic },
+    { path: '/therapy', label: 'Talk2Me', icon: Heart },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -60,7 +63,7 @@ const Navbar: React.FC = () => {
 
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={toggleTheme}>
-              {theme === 'night' ? <Sun size={20} /> : <Moon size={20} />}
+              {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
             </Button>
             <div className="hidden md:flex items-center gap-3">
               <span className="text-sm font-medium text-night-text">{user?.username}</span>

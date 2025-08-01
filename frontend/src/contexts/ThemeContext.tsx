@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-type Theme = 'light' | 'dark' | 'night';
+type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
   theme: Theme;
@@ -11,12 +11,15 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setThemeState] = useState<Theme>('night');
+  const [theme, setThemeState] = useState<Theme>('dark');
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as Theme | null;
-    if (savedTheme) {
+    if (savedTheme && (savedTheme === 'light' || savedTheme === 'dark')) {
       setThemeState(savedTheme);
+    } else {
+      // Default to dark theme for backwards compatibility
+      setThemeState('dark');
     }
   }, []);
 
@@ -26,7 +29,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [theme]);
 
   const toggleTheme = () => {
-    setThemeState(prevTheme => (prevTheme === 'night' ? 'light' : 'night'));
+    setThemeState(prevTheme => (prevTheme === 'dark' ? 'light' : 'dark'));
   };
 
   const setTheme = (newTheme: Theme) => {

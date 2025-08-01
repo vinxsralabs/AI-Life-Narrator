@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Calendar, Mic, Camera } from 'lucide-react';
+import { Calendar, Mic, Camera, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import ConfirmationModal from '../components/ui/ConfirmationModal';
 
 interface TimelineEntry {
   date: string;
@@ -16,11 +18,30 @@ interface TimelineEntry {
 const Timeline: React.FC = () => {
   const [timelineData, setTimelineData] = useState<TimelineEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    entryId: number | null;
+    entryDate: string;
+  }>({
+    isOpen: false,
+    entryId: null,
+    entryDate: ''
+  });
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const fetchTimeline = async () => {
       try {
-        const response = await axios.get('/api/timeline');
+        // Set a very wide date range to get all records
+        const endDate = new Date();
+        const startDate = new Date('2020-01-01'); // Start from a very early date
+        
+        const response = await axios.get('/api/timeline', {
+          params: {
+            start_date: startDate.toISOString(),
+            end_date: endDate.toISOString()
+          }
+        });
         setTimelineData(response.data.entries);
       } catch (error) {
         toast.error('Failed to load timeline');
@@ -31,8 +52,41 @@ const Timeline: React.FC = () => {
     fetchTimeline();
   }, []);
 
+  const handleDeleteClick = (entryId: number, date: string) => {
+    setDeleteModal({
+      isOpen: true,
+      entryId,
+      entryDate: date
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal.entryId) return;
+
+    setDeleting(true);
+    try {
+      await axios.delete(`/api/entries/${deleteModal.entryId}`);
+      
+      // Remove the entry from timeline data
+      setTimelineData(prev => 
+        prev.filter(item => item.entry?.id !== deleteModal.entryId)
+      );
+      
+      toast.success('Entry deleted successfully');
+      setDeleteModal({ isOpen: false, entryId: null, entryDate: '' });
+    } catch (error) {
+      toast.error('Failed to delete entry');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModal({ isOpen: false, entryId: null, entryDate: '' });
+  };
+
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8 pt-24">
       <h1 className="text-4xl font-bold mb-8">Timeline</h1>
       {loading ? (
         <p>Loading timeline...</p>
@@ -53,19 +107,41 @@ const Timeline: React.FC = () => {
               <div className="ml-4 w-full">
                 <Card>
                   <CardHeader>
-                    <CardTitle>{new Date(day.date).toLocaleString('en-GB', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit'
-                    })}</CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg font-semibold text-night-text">
+                        {day.date ? (() => {
+                          try {
+                            return new Date(day.date).toLocaleString(undefined, {
+                              weekday: 'long',
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            });
+                          } catch (error) {
+                            return day.date;
+                          }
+                        })() : 'No date'}
+                      </CardTitle>
+                      {day.entry && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteClick(day.entry!.id, day.date)}
+                          className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     {day.entry && (
                       <Link to={`/story/${day.entry.id}`}>
-                        <p className="line-clamp-2">{day.entry.text_content || day.entry.ai_generated_story}</p>
+                        <p className="line-clamp-2 hover:text-night-accent transition-colors">
+                          {day.entry.text_content || day.entry.ai_generated_story}
+                        </p>
                       </Link>
                     )}
                     <div className="flex items-center gap-4 mt-2 text-night-text-secondary">
@@ -79,6 +155,18 @@ const Timeline: React.FC = () => {
           ))}
         </div>
       )}
+      
+      <ConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Entry"
+        message={`Are you sure you want to delete this entry from ${deleteModal.entryDate}? This action cannot be undone and will also delete any associated audio recordings and images.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        isLoading={deleting}
+        type="danger"
+      />
     </div>
   );
 };
