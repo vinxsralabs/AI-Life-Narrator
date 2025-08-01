@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -8,7 +9,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from database import get_db, User, Entry, AudioFile, Image, init_db, seed_demo_data
+from database import get_db, User, Entry, AudioFile, Image, Narrative, init_db, seed_demo_data
 from auth import (
     get_current_active_user,
     authenticate_user,
@@ -28,6 +29,14 @@ from models import (
     StoryGenerationRequest,
     StoryGenerationResponse,
     UploadResponse,
+    DashboardStats,
+    NarrativeRequest,
+    NarrativeResponse,
+    AudioRequest,
+    ImageRequest,
+    ImageResponse,
+    NarrativeHistory,
+    NarrativeHistoryResponse,
 )
 from ai_service import ai_service
 
@@ -89,6 +98,36 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)):
 async def get_current_user_info(current_user: User = Depends(get_current_active_user)):
     """Get current user information"""
     return current_user
+
+
+@router.get("/dashboard/stats", response_model=DashboardStats)
+async def get_dashboard_stats(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get dashboard statistics"""
+    # Get total entries
+    total_entries = db.query(Entry).filter(Entry.user_id == current_user.id).count()
+    
+    # Get entries with AI generated stories
+    stories_generated = db.query(Entry).filter(
+        Entry.user_id == current_user.id,
+        Entry.ai_generated_story.isnot(None)
+    ).count()
+    
+    # Calculate weekly streak (entries in the last 7 days)
+    from datetime import datetime, timedelta
+    week_ago = datetime.now() - timedelta(days=7)
+    weekly_streak = db.query(Entry).filter(
+        Entry.user_id == current_user.id,
+        Entry.date >= week_ago
+    ).count()
+    
+    return DashboardStats(
+        total_entries=total_entries,
+        stories_generated=stories_generated,
+        weekly_streak=weekly_streak
+    )
 
 
 # Entry routes
@@ -157,6 +196,9 @@ async def get_entry(
 @router.post("/upload/audio", response_model=UploadResponse)
 async def upload_audio(
     file: UploadFile = File(...),
+    entry_id: Optional[int] = None,
+    create_entry: bool = False,
+    story_style: str = "story",
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -175,6 +217,10 @@ async def upload_audio(
     # Save file
     upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
     audio_dir = os.path.join(upload_dir, "audio")
+    
+    # Create directories if they don't exist
+    os.makedirs(audio_dir, exist_ok=True)
+    
     file_path = os.path.join(audio_dir, unique_filename)
 
     with open(file_path, "wb") as buffer:
@@ -183,9 +229,33 @@ async def upload_audio(
     # Transcribe audio
     transcription = await ai_service.transcribe_audio(file_path)
 
+    # Create entry from transcription if requested
+    if create_entry and transcription:
+        entry = Entry(
+            user_id=current_user.id,
+            text_content=transcription,
+            story_style=story_style,
+        )
+        db.add(entry)
+        db.commit()
+        db.refresh(entry)
+        entry_id = entry.id
+    elif not entry_id:
+        # If no entry_id provided and not creating entry, create a temporary entry
+        entry = Entry(
+            user_id=current_user.id,
+            text_content=transcription,
+            story_style=story_style,
+        )
+        db.add(entry)
+        db.commit()
+        db.refresh(entry)
+        entry_id = entry.id
+
     # Save to database
     audio_file = AudioFile(
         user_id=current_user.id,
+        entry_id=entry_id,
         filename=file.filename,
         file_path=file_path,
         transcription=transcription,
@@ -205,11 +275,38 @@ async def upload_audio(
     )
 
 
+@router.put("/entries/{entry_id}/text", response_model=EntryModel)
+async def update_entry_text(
+    entry_id: int,
+    text_content: str = Query(..., description="The text content to update"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update entry text content"""
+    entry = (
+        db.query(Entry)
+        .filter(Entry.id == entry_id, Entry.user_id == current_user.id)
+        .first()
+    )
+
+    if not entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found"
+        )
+
+    entry.text_content = text_content
+    db.commit()
+    db.refresh(entry)
+
+    return entry
+
+
 # Image upload
 @router.post("/upload/image", response_model=UploadResponse)
 async def upload_image(
     files: List[UploadFile] = File(...),
     description: Optional[str] = Form(None),
+    entry_id: Optional[int] = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -231,6 +328,10 @@ async def upload_image(
         # Save file
         upload_dir = os.getenv("UPLOAD_DIR", "./uploads")
         image_dir = os.path.join(upload_dir, "images")
+        
+        # Create directories if they don't exist
+        os.makedirs(image_dir, exist_ok=True)
+        
         file_path = os.path.join(image_dir, unique_filename)
 
         with open(file_path, "wb") as buffer:
@@ -239,6 +340,7 @@ async def upload_image(
         # Save to database
         image = Image(
             user_id=current_user.id,
+            entry_id=entry_id,
             filename=file.filename,
             file_path=file_path,
             description=description,
@@ -466,6 +568,209 @@ async def get_monthly_recap(
     return {"recap": recap, "period": "monthly"}
 
 
+# Narrative generation
+@router.post("/narrate", response_model=NarrativeResponse)
+async def generate_narrative(
+    request: NarrativeRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Generate a narrative from timeline entries"""
+    
+    if not request.entries:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="No entries provided for narrative generation"
+        )
+
+    try:
+        # Generate narrative using AI service
+        narrative = await ai_service.generate_narrative(request.entries)
+        
+        # Save narrative to database
+        narrative_record = Narrative(
+            user_id=current_user.id,
+            start_date=datetime.fromisoformat(request.start_date),
+            end_date=datetime.fromisoformat(request.end_date),
+            narrative_text=narrative
+        )
+        db.add(narrative_record)
+        db.commit()
+        db.refresh(narrative_record)
+        
+        return NarrativeResponse(
+            narrative=narrative,
+            period=f"{request.start_date} to {request.end_date}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate narrative: {str(e)}"
+        )
+
+
+@router.post("/narrate/audio")
+async def generate_narrative_audio(
+    request: AudioRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Generate audio from narrative text"""
+    
+    if not request.text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="No text provided for audio generation"
+        )
+
+    try:
+        print(f"Generating audio for text length: {len(request.text)}")
+        
+        # Generate audio using AI service
+        audio_data = await ai_service.generate_speech(request.text)
+        
+        if not audio_data:
+            print("No audio data returned from AI service")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate audio - no data returned from AI service"
+            )
+        
+        print(f"Audio data generated successfully, size: {len(audio_data)} bytes")
+        
+        return Response(
+            content=audio_data,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=narrative.mp3"}
+        )
+    except Exception as e:
+        print(f"Audio generation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate audio: {str(e)}"
+        )
+
+
+@router.post("/narrate/image", response_model=ImageResponse)
+async def generate_narrative_image(
+    request: ImageRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Generate image from narrative text"""
+    
+    if not request.text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="No text provided for image generation"
+        )
+
+    try:
+        print(f"Generating image for text length: {len(request.text)}")
+        
+        # Generate image using AI service
+        image_url = await ai_service.generate_narrative_image(request.text)
+        
+        if not image_url:
+            print("No image URL returned from AI service")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate image - no URL returned from AI service"
+            )
+        
+        print(f"Image generated successfully: {image_url}")
+        
+        return ImageResponse(image_url=image_url)
+    except Exception as e:
+        print(f"Image generation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate image: {str(e)}"
+        )
+
+
+@router.put("/narrate/{narrative_id}/audio")
+async def update_narrative_audio(
+    narrative_id: int,
+    audio_url: str = Query(..., description="The audio URL to save"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update narrative with audio URL"""
+    
+    narrative = (
+        db.query(Narrative)
+        .filter(Narrative.id == narrative_id, Narrative.user_id == current_user.id)
+        .first()
+    )
+    
+    if not narrative:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Narrative not found"
+        )
+    
+    narrative.audio_url = audio_url
+    db.commit()
+    db.refresh(narrative)
+    
+    return {"success": True, "message": "Audio URL updated successfully"}
+
+
+@router.put("/narrate/{narrative_id}/image")
+async def update_narrative_image(
+    narrative_id: int,
+    image_url: str = Query(..., description="The image URL to save"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update narrative with image URL"""
+    
+    narrative = (
+        db.query(Narrative)
+        .filter(Narrative.id == narrative_id, Narrative.user_id == current_user.id)
+        .first()
+    )
+    
+    if not narrative:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Narrative not found"
+        )
+    
+    narrative.image_url = image_url
+    db.commit()
+    db.refresh(narrative)
+    
+    return {"success": True, "message": "Image URL updated successfully"}
+
+
+@router.get("/narrate/history", response_model=NarrativeHistoryResponse)
+async def get_narrative_history(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 3,
+):
+    """Get user's narrative history"""
+    
+    # Get total count
+    total_count = db.query(Narrative).filter(Narrative.user_id == current_user.id).count()
+    
+    # Get narratives with pagination
+    narratives = (
+        db.query(Narrative)
+        .filter(Narrative.user_id == current_user.id)
+        .order_by(Narrative.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    
+    return NarrativeHistoryResponse(
+        narratives=narratives,
+        total_count=total_count
+    )
+
+
 # File serving routes
 @router.get("/files/audio/{filename}")
 async def serve_audio_file(
@@ -479,6 +784,33 @@ async def serve_audio_file(
         raise HTTPException(status_code=404, detail="File not found")
 
     return {"file_path": file_path}
+
+
+@router.get("/audio/{audio_id}")
+async def get_audio_file(
+    audio_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get audio file details"""
+    audio_file = (
+        db.query(AudioFile)
+        .filter(AudioFile.id == audio_id, AudioFile.user_id == current_user.id)
+        .first()
+    )
+    
+    if not audio_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found"
+        )
+    
+    return {
+        "id": audio_file.id,
+        "filename": audio_file.filename,
+        "transcription": audio_file.transcription,
+        "entry_id": audio_file.entry_id,
+        "created_at": audio_file.created_at
+    }
 
 
 @router.get("/files/image/{filename}")

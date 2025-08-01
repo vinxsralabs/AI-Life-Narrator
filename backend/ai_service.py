@@ -1,4 +1,4 @@
-import openai
+from openai import OpenAI
 import os
 import base64
 import requests
@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize OpenAI client
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 class AIService:
@@ -22,7 +22,7 @@ class AIService:
         """Transcribe audio file using OpenAI Whisper"""
         try:
             with open(audio_file_path, "rb") as audio_file:
-                transcript = openai.Audio.transcribe(
+                transcript = client.audio.transcriptions.create(
                     model="whisper-1", file=audio_file, response_format="text"
                 )
             return transcript
@@ -80,7 +80,7 @@ Write a 3-4 stanza poem that poetically describes this day.""",
         )
 
         try:
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {
@@ -113,7 +113,7 @@ Write a 3-4 stanza poem that poetically describes this day.""",
             visual_prompt = f"Beautiful storybook illustration: {story[:200]}... Warm, inviting, narrative style with rich colors."
 
         try:
-            response = openai.Image.create(
+            response = client.images.generate(
                 model="dall-e-3",
                 prompt=visual_prompt,
                 size="1024x1024",
@@ -144,7 +144,7 @@ Write a 3-4 stanza poem that poetically describes this day.""",
                 week_summary += f"{date}: {content[:100]}...\n"
 
         try:
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {
@@ -183,7 +183,7 @@ Write a 3-4 stanza poem that poetically describes this day.""",
                 month_summary += f"{date}: {content[:100]}...\n"
 
         try:
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {
@@ -203,6 +203,100 @@ Write a 3-4 stanza poem that poetically describes this day.""",
 
         except Exception as e:
             print(f"Error generating monthly recap: {e}")
+            return None
+
+    async def generate_narrative(
+        self, entries: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Generate a narrative from timeline entries"""
+        
+        if not entries:
+            return "No entries found for the selected period."
+
+        # Prepare entries summary
+        entries_summary = "Timeline entries:\n"
+        for entry in entries:
+            date = entry.get("date", "Unknown date")
+            text_content = entry.get("text_content", "")
+            ai_story = entry.get("ai_generated_story", "")
+            
+            if text_content or ai_story:
+                content = ai_story if ai_story else text_content
+                entries_summary += f"{date}: {content[:200]}...\n"
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an AI life narrator creating beautiful narratives from personal timeline entries. Write in a warm, personal, and engaging style that weaves together the different moments into a cohesive story.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Create a beautiful narrative that tells the story of this person's life during the selected period. Weave together the different entries into a cohesive, engaging story that captures the essence of their experiences:\n{entries_summary}",
+                    },
+                ],
+                max_tokens=1500,
+                temperature=0.8,
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            print(f"Error generating narrative: {e}")
+            return None
+
+    async def generate_speech(self, text: str) -> Optional[bytes]:
+        """Generate speech from text using OpenAI TTS"""
+        try:
+            # Limit text length to avoid API limits (TTS has a character limit)
+            if len(text) > 4000:
+                text = text[:4000] + "..."
+            
+            print(f"Calling OpenAI TTS with text length: {len(text)}")
+            
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice="alloy",
+                input=text
+            )
+            
+            print(f"OpenAI TTS response received, content length: {len(response.content)}")
+            
+            # The response.content is already bytes
+            return response.content
+
+        except Exception as e:
+            print(f"Error generating speech: {e}")
+            print(f"Error type: {type(e)}")
+            return None
+
+    async def generate_narrative_image(self, text: str) -> Optional[str]:
+        """Generate an image from narrative text using DALL-E"""
+        try:
+            # Limit text length to avoid API limits
+            if len(text) > 1000:
+                text = text[:1000] + "..."
+            
+            print(f"Generating image for narrative text length: {len(text)}")
+            
+            # Create a visual prompt based on the narrative
+            visual_prompt = f"Beautiful, artistic illustration representing this life narrative: {text[:200]}... Create a warm, personal, and engaging visual that captures the essence of this story. Use rich colors and emotional depth."
+            
+            response = client.images.generate(
+                model="dall-e-3",
+                prompt=visual_prompt,
+                size="1024x1024",
+                quality="standard",
+                n=1,
+            )
+            
+            print(f"Image generated successfully: {response.data[0].url}")
+            return response.data[0].url
+
+        except Exception as e:
+            print(f"Error generating narrative image: {e}")
             return None
 
 

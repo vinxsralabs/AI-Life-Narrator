@@ -61,7 +61,14 @@ const StoryView: React.FC = () => {
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle className="text-3xl">{new Date(story.date).toLocaleDateString()}</CardTitle>
+            <CardTitle className="text-3xl">{new Date(story.date).toLocaleString('en-GB', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            })}</CardTitle>
             <Button onClick={handleRegenerate} loading={isRegenerating}>
               <RefreshCw className={`mr-2 ${isRegenerating ? 'animate-spin' : ''}`} />
               Regenerate

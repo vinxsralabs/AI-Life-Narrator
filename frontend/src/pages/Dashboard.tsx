@@ -34,23 +34,24 @@ const StatCard = ({ icon, label, value, isLoading }: { icon: React.ReactNode, la
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [recentEntries, setRecentEntries] = useState<Entry[]>([]);
-  const [stats, setStats] = useState({ totalEntries: 0, storiesGenerated: 0 });
+  const [stats, setStats] = useState({ totalEntries: 0, storiesGenerated: 0, weeklyStreak: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [entriesRes, timelineRes] = await Promise.all([
+        const [entriesRes, statsRes] = await Promise.all([
           axios.get('/api/entries?limit=3'),
-          axios.get('/api/timeline') 
+          axios.get('/api/dashboard/stats')
         ]);
         
         setRecentEntries(entriesRes.data);
-
-        const totalEntries = timelineRes.data.length;
-        const storiesGenerated = timelineRes.data.filter((e: any) => e.ai_generated_story).length;
-        setStats({ totalEntries, storiesGenerated });
+        setStats({ 
+          totalEntries: statsRes.data.total_entries, 
+          storiesGenerated: statsRes.data.stories_generated,
+          weeklyStreak: statsRes.data.weekly_streak
+        });
 
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -91,7 +92,7 @@ const Dashboard: React.FC = () => {
         className="text-4xl font-bold mb-2"
         variants={itemVariants}
       >
-        Welcome, {user?.username}!
+        Welcome Home, {user?.username}!
       </motion.h1>
       <motion.p className="text-lg text-night-text-secondary mb-8" variants={itemVariants}>
         Ready to chronicle your day?
@@ -100,7 +101,7 @@ const Dashboard: React.FC = () => {
       <motion.div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8" variants={itemVariants}>
         <StatCard icon={<FileText size={24} />} label="Total Entries" value={stats.totalEntries} isLoading={loading} />
         <StatCard icon={<Star size={24} />} label="Stories Generated" value={stats.storiesGenerated} isLoading={loading} />
-        <StatCard icon={<BarChart2 size={24} />} label="Weekly Streak" value="0" isLoading={loading} />
+        <StatCard icon={<BarChart2 size={24} />} label="Weekly Streak" value={stats.weeklyStreak} isLoading={loading} />
       </motion.div>
 
       <motion.div variants={itemVariants}>
@@ -137,7 +138,14 @@ const Dashboard: React.FC = () => {
                   <Card className="h-full flex flex-col">
                     <CardHeader>
                       <CardTitle className="flex justify-between items-center">
-                        <span>{new Date(entry.date).toLocaleDateString()}</span>
+                        <span>{new Date(entry.date).toLocaleString('en-GB', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })}</span>
                         {entry.ai_generated_story && <Star size={16} className="text-yellow-400" />}
                       </CardTitle>
                       <CardDescription>{entry.story_style}</CardDescription>

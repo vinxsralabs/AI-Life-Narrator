@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
 import Timeline from './pages/Timeline';
 import StoryView from './pages/StoryView';
 import Upload from './pages/Upload';
+import Narrate from './pages/Narrate';
 import LoadingSpinner from './components/LoadingSpinner';
 import AnimatedBackground from './components/ui/AnimatedBackground';
 
@@ -137,6 +138,22 @@ const App: React.FC = () => {
                 >
                   <Navbar />
                   <Upload />
+                </motion.div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/narrate"
+            element={
+              <ProtectedRoute>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.4, ease: "easeInOut" }}
+                >
+                  <Navbar />
+                  <Narrate />
                 </motion.div>
               </ProtectedRoute>
             }

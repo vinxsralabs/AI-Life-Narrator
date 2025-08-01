@@ -11,6 +11,7 @@ import {
   User,
   Menu,
   X,
+  Mic,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -23,9 +24,10 @@ const Navbar: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: Home },
+    { path: '/dashboard', label: 'Home', icon: Home },
     { path: '/timeline', label: 'Timeline', icon: Calendar },
-    { path: '/upload', label: 'Upload', icon: Upload },
+    { path: '/upload', label: 'Create', icon: Upload },
+    { path: '/narrate', label: 'Narrate', icon: Mic },
   ];
 
   const isActive = (path: string) => location.pathname === path;

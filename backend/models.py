@@ -137,7 +137,56 @@ class UploadResponse(BaseModel):
     transcription: Optional[str] = None
 
 
+# Dashboard models
+class DashboardStats(BaseModel):
+    total_entries: int
+    stories_generated: int
+    weekly_streak: int = 0
+
+
 # Error models
 class ErrorResponse(BaseModel):
     detail: str
     error_code: Optional[str] = None
+
+
+# Narrative models
+class NarrativeRequest(BaseModel):
+    entries: List[dict]
+    start_date: str
+    end_date: str
+
+
+class NarrativeResponse(BaseModel):
+    narrative: str
+    period: str
+
+
+class AudioRequest(BaseModel):
+    text: str
+
+
+class ImageRequest(BaseModel):
+    text: str
+
+
+class ImageResponse(BaseModel):
+    image_url: str
+
+
+class NarrativeHistory(BaseModel):
+    id: int
+    start_date: datetime
+    end_date: datetime
+    narrative_text: str
+    audio_url: Optional[str] = None
+    image_url: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NarrativeHistoryResponse(BaseModel):
+    narratives: List[NarrativeHistory]
+    total_count: int

@@ -53,7 +53,14 @@ const Timeline: React.FC = () => {
               <div className="ml-4 w-full">
                 <Card>
                   <CardHeader>
-                    <CardTitle>{new Date(day.date).toLocaleDateString()}</CardTitle>
+                    <CardTitle>{new Date(day.date).toLocaleString('en-GB', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit'
+                    })}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {day.entry && (

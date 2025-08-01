@@ -49,6 +49,7 @@ class User(Base):
     entries = relationship("Entry", back_populates="user")
     audio_files = relationship("AudioFile", back_populates="user")
     images = relationship("Image", back_populates="user")
+    narratives = relationship("Narrative", back_populates="user")
 
 
 class Entry(Base):
@@ -100,6 +101,22 @@ class Image(Base):
     # Relationships
     user = relationship("User", back_populates="images")
     entry = relationship("Entry", back_populates="images")
+
+
+class Narrative(Base):
+    __tablename__ = "narratives"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    start_date = Column(DateTime)
+    end_date = Column(DateTime)
+    narrative_text = Column(Text)
+    audio_url = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="narratives")
 
 
 # Database dependency
