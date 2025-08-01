@@ -201,3 +201,61 @@ class TherapyChatRequest(BaseModel):
 class TherapyChatResponse(BaseModel):
     response: str
     timestamp: datetime
+
+
+# Mood tracking models
+class MoodEntryBase(BaseModel):
+    mood_value: int  # 1-5 scale (1=very sad, 2=sad, 3=neutral, 4=happy, 5=very happy)
+    mood_emoji: str  # Emoji representation
+    mood_note: Optional[str] = None  # Optional note about the mood
+    date: datetime
+
+
+class MoodEntryCreate(MoodEntryBase):
+    pass
+
+
+class MoodEntry(MoodEntryBase):
+    id: int
+    user_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Highlights models
+class HighlightBase(BaseModel):
+    entry_id: Optional[int] = None
+    highlight_type: str  # "memory", "photo", "audio", "achievement"
+    title: str
+    description: Optional[str] = None
+    is_favorite: bool = False
+
+
+class HighlightCreate(HighlightBase):
+    pass
+
+
+class Highlight(HighlightBase):
+    id: int
+    user_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# API Request/Response models for My Reflections
+class MoodStatsResponse(BaseModel):
+    average_mood: float
+    mood_trend: str  # "improving", "declining", "stable"
+    total_entries: int
+    mood_distribution: dict  # {1: count, 2: count, ...}
+
+
+class HighlightsResponse(BaseModel):
+    recent_highlights: List[dict]
+    on_this_day: List[dict]
+    weekly_summary: Optional[str]
+    mood_insights: Optional[str]

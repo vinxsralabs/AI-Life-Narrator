@@ -50,6 +50,8 @@ class User(Base):
     audio_files = relationship("AudioFile", back_populates="user")
     images = relationship("Image", back_populates="user")
     narratives = relationship("Narrative", back_populates="user")
+    mood_entries = relationship("MoodEntry", back_populates="user")
+    highlights = relationship("Highlight", back_populates="user")
 
 
 class Entry(Base):
@@ -117,6 +119,38 @@ class Narrative(Base):
 
     # Relationships
     user = relationship("User", back_populates="narratives")
+
+
+class MoodEntry(Base):
+    __tablename__ = "mood_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    mood_value = Column(Integer, nullable=False)  # 1-5 scale
+    mood_emoji = Column(String, nullable=False)
+    mood_note = Column(Text, nullable=True)
+    date = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="mood_entries")
+
+
+class Highlight(Base):
+    __tablename__ = "highlights"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    entry_id = Column(Integer, ForeignKey("entries.id"), nullable=True)
+    highlight_type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    is_favorite = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="highlights")
+    entry = relationship("Entry", backref="highlights")
 
 
 # Database dependency

@@ -25,6 +25,8 @@ from database import (
     AudioFile,
     Image,
     Narrative,
+    MoodEntry,
+    Highlight,
     init_db,
     seed_demo_data,
 )
@@ -57,6 +59,12 @@ from models import (
     NarrativeHistoryResponse,
     TherapyChatRequest,
     TherapyChatResponse,
+    MoodEntryCreate,
+    MoodEntry as MoodEntryModel,
+    MoodStatsResponse,
+    HighlightCreate,
+    Highlight as HighlightModel,
+    HighlightsResponse,
 )
 from ai_service import ai_service
 
@@ -925,6 +933,326 @@ async def therapy_chat(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate therapy response: {str(e)}",
+        )
+
+
+# Mood tracking routes
+@router.post("/mood", response_model=MoodEntryModel)
+async def create_mood_entry(
+    mood_data: MoodEntryCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Create or update a mood entry for today"""
+    try:
+        from sqlalchemy import func
+
+        # Check if mood entry already exists for this date
+        existing_mood = (
+            db.query(MoodEntry)
+            .filter(
+                MoodEntry.user_id == current_user.id,
+                func.date(MoodEntry.date) == func.date(mood_data.date),
+            )
+            .first()
+        )
+
+        if existing_mood:
+            # Update existing mood entry
+            existing_mood.mood_value = mood_data.mood_value
+            existing_mood.mood_emoji = mood_data.mood_emoji
+            existing_mood.mood_note = mood_data.mood_note
+            db.commit()
+            db.refresh(existing_mood)
+            return existing_mood
+        else:
+            # Create new mood entry
+            db_mood = MoodEntry(
+                user_id=current_user.id,
+                mood_value=mood_data.mood_value,
+                mood_emoji=mood_data.mood_emoji,
+                mood_note=mood_data.mood_note,
+                date=mood_data.date,
+            )
+            db.add(db_mood)
+            db.commit()
+            db.refresh(db_mood)
+            return db_mood
+
+    except Exception as e:
+        print(f"Error creating mood entry: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create mood entry",
+        )
+
+
+@router.get("/mood/stats", response_model=MoodStatsResponse)
+async def get_mood_stats(
+    days: int = Query(default=30, description="Number of days to analyze"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get mood statistics for the specified period"""
+    try:
+        from sqlalchemy import func
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        mood_entries = (
+            db.query(MoodEntry)
+            .filter(
+                MoodEntry.user_id == current_user.id,
+                MoodEntry.date >= start_date,
+                MoodEntry.date <= end_date,
+            )
+            .order_by(MoodEntry.date.desc())
+            .all()
+        )
+
+        if not mood_entries:
+            return MoodStatsResponse(
+                average_mood=3.0,
+                mood_trend="stable",
+                total_entries=0,
+                mood_distribution={1: 0, 2: 0, 3: 0, 4: 0, 5: 0},
+            )
+
+        # Calculate statistics
+        mood_values = [entry.mood_value for entry in mood_entries]
+        average_mood = sum(mood_values) / len(mood_values)
+
+        # Calculate trend (comparing first half vs second half)
+        if len(mood_values) >= 4:
+            mid_point = len(mood_values) // 2
+            first_half_avg = sum(mood_values[:mid_point]) / mid_point
+            second_half_avg = sum(mood_values[mid_point:]) / (
+                len(mood_values) - mid_point
+            )
+
+            if second_half_avg > first_half_avg + 0.3:
+                mood_trend = "improving"
+            elif second_half_avg < first_half_avg - 0.3:
+                mood_trend = "declining"
+            else:
+                mood_trend = "stable"
+        else:
+            mood_trend = "stable"
+
+        # Calculate mood distribution
+        mood_distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+        for value in mood_values:
+            mood_distribution[value] += 1
+
+        return MoodStatsResponse(
+            average_mood=round(average_mood, 2),
+            mood_trend=mood_trend,
+            total_entries=len(mood_entries),
+            mood_distribution=mood_distribution,
+        )
+
+    except Exception as e:
+        print(f"Error getting mood stats: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get mood statistics",
+        )
+
+
+@router.get("/mood/timeline")
+async def get_mood_timeline(
+    days: int = Query(default=30, description="Number of days to retrieve"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get mood timeline data for charts"""
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        mood_entries = (
+            db.query(MoodEntry)
+            .filter(
+                MoodEntry.user_id == current_user.id,
+                MoodEntry.date >= start_date,
+                MoodEntry.date <= end_date,
+            )
+            .order_by(MoodEntry.date.asc())
+            .all()
+        )
+
+        timeline_data = []
+        for entry in mood_entries:
+            timeline_data.append(
+                {
+                    "date": entry.date.strftime("%Y-%m-%d"),
+                    "mood_value": entry.mood_value,
+                    "mood_emoji": entry.mood_emoji,
+                    "mood_note": entry.mood_note,
+                    "timestamp": entry.date.isoformat(),
+                }
+            )
+
+        return {"timeline": timeline_data}
+
+    except Exception as e:
+        print(f"Error getting mood timeline: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get mood timeline",
+        )
+
+
+# Highlights routes
+@router.get("/highlights", response_model=HighlightsResponse)
+async def get_highlights(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get user highlights and memories"""
+    try:
+        from sqlalchemy import func, extract
+
+        # Get recent highlights (last 30 days)
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        recent_entries = (
+            db.query(Entry)
+            .filter(
+                Entry.user_id == current_user.id, Entry.created_at >= thirty_days_ago
+            )
+            .order_by(Entry.created_at.desc())
+            .limit(10)
+            .all()
+        )
+
+        recent_highlights = []
+        for entry in recent_entries:
+            highlight_data = {
+                "id": entry.id,
+                "date": entry.date.strftime("%Y-%m-%d"),
+                "title": f"Memory from {entry.date.strftime('%B %d')}",
+                "content": (
+                    entry.text_content[:100] + "..." if entry.text_content else ""
+                ),
+                "ai_story": (
+                    entry.ai_generated_story[:150] + "..."
+                    if entry.ai_generated_story
+                    else ""
+                ),
+                "type": "memory",
+                "timestamp": entry.created_at.isoformat(),
+            }
+            recent_highlights.append(highlight_data)
+
+        # Get "On This Day" entries (same day, previous years)
+        today = datetime.now()
+        on_this_day_entries = (
+            db.query(Entry)
+            .filter(
+                Entry.user_id == current_user.id,
+                extract("month", Entry.date) == today.month,
+                extract("day", Entry.date) == today.day,
+                extract("year", Entry.date) < today.year,
+            )
+            .order_by(Entry.date.desc())
+            .limit(5)
+            .all()
+        )
+
+        on_this_day = []
+        for entry in on_this_day_entries:
+            years_ago = today.year - entry.date.year
+            on_this_day_data = {
+                "id": entry.id,
+                "date": entry.date.strftime("%Y-%m-%d"),
+                "years_ago": years_ago,
+                "title": f"On this day {years_ago} year{'s' if years_ago != 1 else ''} ago",
+                "content": (
+                    entry.text_content[:100] + "..." if entry.text_content else ""
+                ),
+                "ai_story": (
+                    entry.ai_generated_story[:150] + "..."
+                    if entry.ai_generated_story
+                    else ""
+                ),
+                "timestamp": entry.created_at.isoformat(),
+            }
+            on_this_day.append(on_this_day_data)
+
+        # Generate weekly summary using AI
+        weekly_summary = await ai_service.generate_weekly_summary_with_mood(
+            entries=recent_entries[:7], user_id=current_user.id, db=db
+        )
+
+        return HighlightsResponse(
+            recent_highlights=recent_highlights,
+            on_this_day=on_this_day,
+            weekly_summary=weekly_summary,
+            mood_insights=None,  # Will be populated by AI service
+        )
+
+    except Exception as e:
+        print(f"Error getting highlights: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get highlights",
+        )
+
+
+@router.post("/highlights/favorite/{entry_id}")
+async def toggle_favorite_highlight(
+    entry_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Toggle favorite status for a highlight"""
+    try:
+        # Check if entry exists and belongs to user
+        entry = (
+            db.query(Entry)
+            .filter(Entry.id == entry_id, Entry.user_id == current_user.id)
+            .first()
+        )
+
+        if not entry:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found"
+            )
+
+        # Check if highlight already exists
+        existing_highlight = (
+            db.query(Highlight)
+            .filter(
+                Highlight.entry_id == entry_id, Highlight.user_id == current_user.id
+            )
+            .first()
+        )
+
+        if existing_highlight:
+            # Toggle favorite status
+            existing_highlight.is_favorite = not existing_highlight.is_favorite
+            db.commit()
+            return {"is_favorite": existing_highlight.is_favorite}
+        else:
+            # Create new highlight as favorite
+            new_highlight = Highlight(
+                user_id=current_user.id,
+                entry_id=entry_id,
+                highlight_type="memory",
+                title=f"Favorite from {entry.date.strftime('%B %d')}",
+                description=entry.text_content[:200] if entry.text_content else None,
+                is_favorite=True,
+            )
+            db.add(new_highlight)
+            db.commit()
+            return {"is_favorite": True}
+
+    except Exception as e:
+        print(f"Error toggling favorite: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to toggle favorite status",
         )
 
 

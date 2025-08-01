@@ -387,6 +387,80 @@ Remember: This is a real person sharing their inner world. Respond with genuine 
             # Return a compassionate fallback response
             return f"I'm sorry, {username}. I'm having a moment of technical difficulty, but I want you to know that I'm here for you. Your feelings and experiences matter deeply. Please feel free to share again, and remember that seeking support is a sign of strength. You're not alone in this journey."
 
+    async def generate_weekly_summary_with_mood(
+        self, entries: List[Any], user_id: int, db: Any
+    ) -> Optional[str]:
+        """Generate a weekly summary that includes mood insights"""
+        try:
+            # Get mood data for the week
+            week_ago = datetime.now() - timedelta(days=7)
+
+            # Import here to avoid circular imports
+            from database import MoodEntry
+
+            mood_entries = (
+                db.query(MoodEntry)
+                .filter(MoodEntry.user_id == user_id, MoodEntry.date >= week_ago)
+                .order_by(MoodEntry.date.desc())
+                .all()
+            )
+
+            # Prepare context
+            week_content = []
+            for entry in entries:
+                if entry.text_content or entry.ai_generated_story:
+                    content = entry.ai_generated_story or entry.text_content
+                    week_content.append(
+                        f"[{entry.date.strftime('%B %d')}] {content[:150]}..."
+                    )
+
+            mood_context = []
+            for mood in mood_entries:
+                mood_text = f"[{mood.date.strftime('%B %d')}] Mood: {mood.mood_emoji} ({mood.mood_value}/5)"
+                if mood.mood_note:
+                    mood_text += f" - {mood.mood_note}"
+                mood_context.append(mood_text)
+
+            if not week_content and not mood_context:
+                return "It's been a quiet week with space for new experiences and reflections."
+
+            context = f"""Weekly Memories:
+{chr(10).join(week_content) if week_content else "No major entries this week."}
+
+Weekly Mood Patterns:
+{chr(10).join(mood_context) if mood_context else "No mood entries recorded this week."}"""
+
+            prompt = f"""You are an AI life narrator creating a beautiful, personalized weekly summary. Based on the following week's memories and mood patterns, write a warm, insightful summary that:
+
+1. Highlights key moments and experiences
+2. Acknowledges emotional patterns and growth
+3. Offers gentle encouragement and perspective
+4. Feels personal and celebratory
+5. Mentions positive trends or resilience shown
+
+{context}
+
+Write a 2-3 paragraph summary that feels like a caring friend reflecting on their week with wisdom and warmth."""
+
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a warm, insightful AI companion who creates beautiful weekly summaries that celebrate the user's journey and emotional growth.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=400,
+                temperature=0.8,
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            print(f"Error generating weekly summary with mood: {e}")
+            return "This week has been filled with moments of growth and reflection. Every experience, big or small, contributes to your unique story."
+
 
 # Global AI service instance
 ai_service = AIService()
