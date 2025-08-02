@@ -12,6 +12,7 @@ import StoryView from './pages/StoryView';
 import Upload from './pages/Upload';
 import Narrate from './pages/Narrate';
 import MyReflections from './pages/MyReflections';
+import TodoList from './pages/TodoList';
 import Therapy from './pages/Therapy';
 import LoadingSpinner from './components/LoadingSpinner';
 import AnimatedBackground from './components/ui/AnimatedBackground';
@@ -188,6 +189,22 @@ const App: React.FC = () => {
                 >
                   <Navbar />
                   <MyReflections />
+                </motion.div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/todos"
+            element={
+              <ProtectedRoute>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.4, ease: "easeInOut" }}
+                >
+                  <Navbar />
+                  <TodoList />
                 </motion.div>
               </ProtectedRoute>
             }

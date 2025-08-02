@@ -27,6 +27,7 @@ from database import (
     Narrative,
     MoodEntry,
     Highlight,
+    TodoDB,
     init_db,
     seed_demo_data,
 )
@@ -65,6 +66,11 @@ from models import (
     HighlightCreate,
     Highlight as HighlightModel,
     HighlightsResponse,
+    TodoCreate,
+    TodoUpdate,
+    Todo as TodoModel,
+    TodoListResponse,
+    TodoStatsResponse,
 )
 from ai_service import ai_service
 
@@ -1268,3 +1274,411 @@ async def serve_image_file(
         raise HTTPException(status_code=404, detail="File not found")
 
     return {"file_path": file_path}
+
+
+# Todo routes
+@router.post("/todos", response_model=TodoModel)
+async def create_todo(
+    todo_data: TodoCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new todo"""
+    try:
+        db_todo = TodoDB(
+            user_id=current_user.id,
+            title=todo_data.title,
+            description=todo_data.description,
+            due_date=todo_data.due_date,
+            priority=todo_data.priority,
+            status=todo_data.status,
+        )
+        db.add(db_todo)
+        db.commit()
+        db.refresh(db_todo)
+        return db_todo
+
+    except Exception as e:
+        print(f"Error creating todo: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create todo",
+        )
+
+
+@router.get("/todos", response_model=TodoListResponse)
+async def get_todos(
+    status_filter: Optional[str] = Query(
+        default=None, description="Filter by status: active, completed, archived"
+    ),
+    priority_filter: Optional[str] = Query(
+        default=None, description="Filter by priority: low, medium, high"
+    ),
+    sort_by: str = Query(
+        default="created_at",
+        description="Sort by: created_at, due_date, priority, title",
+    ),
+    sort_order: str = Query(default="desc", description="Sort order: asc, desc"),
+    limit: int = Query(default=100, description="Limit number of results"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get todos for the current user with filtering and sorting"""
+    try:
+        from sqlalchemy import func
+
+        query = db.query(TodoDB).filter(TodoDB.user_id == current_user.id)
+
+        # Apply filters
+        if status_filter:
+            query = query.filter(TodoDB.status == status_filter)
+        if priority_filter:
+            query = query.filter(TodoDB.priority == priority_filter)
+
+        # Apply sorting
+        sort_column = getattr(TodoDB, sort_by, TodoDB.created_at)
+        if sort_order == "asc":
+            query = query.order_by(sort_column.asc())
+        else:
+            query = query.order_by(sort_column.desc())
+
+        todos = query.limit(limit).all()
+
+        # Calculate counts for stats
+        total_count = db.query(TodoDB).filter(TodoDB.user_id == current_user.id).count()
+        active_count = (
+            db.query(TodoDB)
+            .filter(TodoDB.user_id == current_user.id, TodoDB.status == "active")
+            .count()
+        )
+        completed_count = (
+            db.query(TodoDB)
+            .filter(TodoDB.user_id == current_user.id, TodoDB.status == "completed")
+            .count()
+        )
+
+        # Calculate overdue count
+        from datetime import datetime
+
+        now = datetime.now()
+        overdue_count = (
+            db.query(TodoDB)
+            .filter(
+                TodoDB.user_id == current_user.id,
+                TodoDB.status == "active",
+                TodoDB.due_date < now,
+            )
+            .count()
+        )
+
+        return TodoListResponse(
+            todos=todos,
+            total_count=total_count,
+            active_count=active_count,
+            completed_count=completed_count,
+            overdue_count=overdue_count,
+        )
+
+    except Exception as e:
+        print(f"Error getting todos: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get todos",
+        )
+
+
+@router.get("/todos/{todo_id}", response_model=TodoModel)
+async def get_todo(
+    todo_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get a specific todo by ID"""
+    try:
+        todo = (
+            db.query(TodoDB)
+            .filter(TodoDB.id == todo_id, TodoDB.user_id == current_user.id)
+            .first()
+        )
+
+        if not todo:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found"
+            )
+
+        return todo
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting todo: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get todo",
+        )
+
+
+@router.put("/todos/{todo_id}", response_model=TodoModel)
+async def update_todo(
+    todo_id: int,
+    todo_update: TodoUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update a todo"""
+    try:
+        todo = (
+            db.query(TodoDB)
+            .filter(TodoDB.id == todo_id, TodoDB.user_id == current_user.id)
+            .first()
+        )
+
+        if not todo:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found"
+            )
+
+        # Update fields that are provided
+        update_data = todo_update.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(todo, field, value)
+
+        # Update the updated_at timestamp
+        from datetime import datetime
+
+        todo.updated_at = datetime.now()
+
+        db.commit()
+        db.refresh(todo)
+        return todo
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating todo: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update todo",
+        )
+
+
+@router.delete("/todos/{todo_id}")
+async def delete_todo(
+    todo_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a todo"""
+    try:
+        todo = (
+            db.query(TodoDB)
+            .filter(TodoDB.id == todo_id, TodoDB.user_id == current_user.id)
+            .first()
+        )
+
+        if not todo:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found"
+            )
+
+        db.delete(todo)
+        db.commit()
+        return {"message": "Todo deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting todo: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete todo",
+        )
+
+
+@router.patch("/todos/{todo_id}/status")
+async def update_todo_status(
+    todo_id: int,
+    status_update: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update todo status (complete, activate, archive)"""
+    try:
+        new_status = status_update.get("status")
+        if new_status not in ["active", "completed", "archived"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid status. Must be: active, completed, or archived",
+            )
+
+        todo = (
+            db.query(TodoDB)
+            .filter(TodoDB.id == todo_id, TodoDB.user_id == current_user.id)
+            .first()
+        )
+
+        if not todo:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found"
+            )
+
+        todo.status = new_status
+
+        # Update the updated_at timestamp
+        from datetime import datetime
+
+        todo.updated_at = datetime.now()
+
+        db.commit()
+        db.refresh(todo)
+        return {"message": f"Todo status updated to {new_status}", "todo": todo}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating todo status: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update todo status",
+        )
+
+
+@router.get("/todos/stats/summary", response_model=TodoStatsResponse)
+async def get_todo_stats(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get todo statistics for the user"""
+    try:
+        from datetime import datetime, timedelta
+
+        # Get basic counts
+        total_todos = db.query(TodoDB).filter(TodoDB.user_id == current_user.id).count()
+        completed_todos = (
+            db.query(TodoDB)
+            .filter(TodoDB.user_id == current_user.id, TodoDB.status == "completed")
+            .count()
+        )
+        active_todos = (
+            db.query(TodoDB)
+            .filter(TodoDB.user_id == current_user.id, TodoDB.status == "active")
+            .count()
+        )
+
+        # Calculate overdue todos
+        now = datetime.now()
+        overdue_todos = (
+            db.query(TodoDB)
+            .filter(
+                TodoDB.user_id == current_user.id,
+                TodoDB.status == "active",
+                TodoDB.due_date < now,
+            )
+            .count()
+        )
+
+        # Calculate completion rate
+        completion_rate = (
+            (completed_todos / total_todos * 100) if total_todos > 0 else 0
+        )
+
+        # Calculate productivity trend (comparing last 7 days vs previous 7 days)
+        week_ago = now - timedelta(days=7)
+        two_weeks_ago = now - timedelta(days=14)
+
+        recent_completed = (
+            db.query(TodoDB)
+            .filter(
+                TodoDB.user_id == current_user.id,
+                TodoDB.status == "completed",
+                TodoDB.updated_at >= week_ago,
+            )
+            .count()
+        )
+
+        previous_completed = (
+            db.query(TodoDB)
+            .filter(
+                TodoDB.user_id == current_user.id,
+                TodoDB.status == "completed",
+                TodoDB.updated_at >= two_weeks_ago,
+                TodoDB.updated_at < week_ago,
+            )
+            .count()
+        )
+
+        if previous_completed == 0:
+            productivity_trend = "stable"
+        elif recent_completed > previous_completed:
+            productivity_trend = "improving"
+        elif recent_completed < previous_completed:
+            productivity_trend = "declining"
+        else:
+            productivity_trend = "stable"
+
+        return TodoStatsResponse(
+            total_todos=total_todos,
+            completed_todos=completed_todos,
+            active_todos=active_todos,
+            overdue_todos=overdue_todos,
+            completion_rate=round(completion_rate, 2),
+            productivity_trend=productivity_trend,
+        )
+
+    except Exception as e:
+        print(f"Error getting todo stats: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get todo statistics",
+        )
+
+
+@router.get("/todos/today")
+async def get_today_todos(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get todos due today and overdue"""
+    try:
+        from datetime import datetime, date
+        from sqlalchemy import func
+
+        today = date.today()
+        now = datetime.now()
+
+        # Get todos due today
+        today_todos = (
+            db.query(TodoDB)
+            .filter(
+                TodoDB.user_id == current_user.id,
+                TodoDB.status == "active",
+                func.date(TodoDB.due_date) == today,
+            )
+            .order_by(TodoDB.priority.desc(), TodoDB.due_date.asc())
+            .all()
+        )
+
+        # Get overdue todos
+        overdue_todos = (
+            db.query(TodoDB)
+            .filter(
+                TodoDB.user_id == current_user.id,
+                TodoDB.status == "active",
+                TodoDB.due_date < now,
+            )
+            .order_by(TodoDB.priority.desc(), TodoDB.due_date.asc())
+            .all()
+        )
+
+        return {
+            "today_todos": today_todos,
+            "overdue_todos": overdue_todos,
+            "total_count": len(today_todos) + len(overdue_todos),
+        }
+
+    except Exception as e:
+        print(f"Error getting today's todos: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get today's todos",
+        )

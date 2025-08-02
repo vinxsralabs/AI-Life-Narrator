@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card';
 import { Skeleton } from '../components/ui/Skeleton';
 import ConfirmationModal from '../components/ui/ConfirmationModal';
+import TodoWidget from '../components/TodoWidget';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
@@ -154,16 +155,18 @@ const Dashboard: React.FC = () => {
         <StatCard icon={<BarChart2 size={24} />} label="Weekly Streak" value={stats.weeklyStreak} isLoading={loading} />
       </motion.div>
 
-      <motion.div variants={itemVariants}>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-semibold">Recent Entries</h2>
-          <Link to="/upload">
-            <Button>
-              <Plus size={16} className="mr-2" />
-              New Entry
-            </Button>
-          </Link>
-        </div>
+      <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent Entries - Takes 2 columns */}
+        <div className="lg:col-span-2">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-semibold">Recent Entries</h2>
+            <Link to="/upload">
+              <Button>
+                <Plus size={16} className="mr-2" />
+                New Entry
+              </Button>
+            </Link>
+          </div>
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[...Array(3)].map((_, i) => (
@@ -242,6 +245,12 @@ const Dashboard: React.FC = () => {
             </CardContent>
           </Card>
         )}
+        </div>
+        
+        {/* Todo Widget - Takes 1 column */}
+        <div className="lg:col-span-1">
+          <TodoWidget />
+        </div>
       </motion.div>
       
       <ConfirmationModal

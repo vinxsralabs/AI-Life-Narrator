@@ -52,6 +52,7 @@ class User(Base):
     narratives = relationship("Narrative", back_populates="user")
     mood_entries = relationship("MoodEntry", back_populates="user")
     highlights = relationship("Highlight", back_populates="user")
+    todos = relationship("TodoDB", back_populates="user")
 
 
 class Entry(Base):
@@ -151,6 +152,23 @@ class Highlight(Base):
     # Relationships
     user = relationship("User", back_populates="highlights")
     entry = relationship("Entry", backref="highlights")
+
+
+class TodoDB(Base):
+    __tablename__ = "todos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    due_date = Column(DateTime, nullable=True)
+    priority = Column(String, default="medium")  # "low", "medium", "high"
+    status = Column(String, default="active")  # "active", "completed", "archived"
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="todos")
 
 
 # Database dependency

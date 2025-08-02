@@ -259,3 +259,52 @@ class HighlightsResponse(BaseModel):
     on_this_day: List[dict]
     weekly_summary: Optional[str]
     mood_insights: Optional[str]
+
+
+# Todo models
+class TodoBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    due_date: Optional[datetime] = None
+    priority: str = "medium"  # "low", "medium", "high"
+    status: str = "active"  # "active", "completed", "archived"
+
+
+class TodoCreate(TodoBase):
+    pass
+
+
+class TodoUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    due_date: Optional[datetime] = None
+    priority: Optional[str] = None
+    status: Optional[str] = None
+
+
+class Todo(TodoBase):
+    id: int
+    user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Todo API Response models
+class TodoListResponse(BaseModel):
+    todos: List[Todo]
+    total_count: int
+    active_count: int
+    completed_count: int
+    overdue_count: int
+
+
+class TodoStatsResponse(BaseModel):
+    total_todos: int
+    completed_todos: int
+    active_todos: int
+    overdue_todos: int
+    completion_rate: float
+    productivity_trend: str  # "improving", "declining", "stable"
