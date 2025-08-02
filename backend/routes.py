@@ -1366,6 +1366,7 @@ async def get_todos(
             .filter(
                 TodoDB.user_id == current_user.id,
                 TodoDB.status == "active",
+                TodoDB.due_date.isnot(None),
                 TodoDB.due_date < now,
             )
             .count()
@@ -1572,6 +1573,7 @@ async def get_todo_stats(
             .filter(
                 TodoDB.user_id == current_user.id,
                 TodoDB.status == "active",
+                TodoDB.due_date.isnot(None),
                 TodoDB.due_date < now,
             )
             .count()
@@ -1646,24 +1648,26 @@ async def get_today_todos(
         today = date.today()
         now = datetime.now()
 
-        # Get todos due today
+        # Get todos due today (only those with due_date set)
         today_todos = (
             db.query(TodoDB)
             .filter(
                 TodoDB.user_id == current_user.id,
                 TodoDB.status == "active",
+                TodoDB.due_date.isnot(None),
                 func.date(TodoDB.due_date) == today,
             )
             .order_by(TodoDB.priority.desc(), TodoDB.due_date.asc())
             .all()
         )
 
-        # Get overdue todos
+        # Get overdue todos (only those with due_date set)
         overdue_todos = (
             db.query(TodoDB)
             .filter(
                 TodoDB.user_id == current_user.id,
                 TodoDB.status == "active",
+                TodoDB.due_date.isnot(None),
                 TodoDB.due_date < now,
             )
             .order_by(TodoDB.priority.desc(), TodoDB.due_date.asc())
