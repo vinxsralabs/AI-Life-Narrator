@@ -136,7 +136,15 @@ const Timeline: React.FC = () => {
                     {day.entry && (
                       <Link to={`/story/${day.entry.id}`}>
                         <p className="line-clamp-2 hover:text-night-accent transition-colors">
-                          {day.entry.text_content || day.entry.ai_generated_story}
+                          {formatDateTime(day.date, {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            timeZoneName: undefined
+                          }).replace(',', '').replace(' ', ', ')}: {day.entry.text_content || day.entry.ai_generated_story}
                         </p>
                       </Link>
                     )}

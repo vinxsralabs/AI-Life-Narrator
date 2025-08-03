@@ -28,6 +28,44 @@ const Therapy: React.FC = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Load chat history from localStorage on component mount
+  useEffect(() => {
+    const savedMessages = localStorage.getItem('talk2me_chat_history');
+    if (savedMessages) {
+      try {
+        const parsedMessages = JSON.parse(savedMessages).map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }));
+        setMessages(parsedMessages);
+      } catch (error) {
+        console.error('Error loading chat history:', error);
+        // If there's an error loading saved messages, start with welcome message
+        loadWelcomeMessage();
+      }
+    } else {
+      // If no saved messages, start with welcome message
+      loadWelcomeMessage();
+    }
+  }, []);
+
+  // Save chat history to localStorage whenever messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem('talk2me_chat_history', JSON.stringify(messages));
+    }
+  }, [messages]);
+
+  const loadWelcomeMessage = () => {
+    const welcomeMessage: ChatMessage = {
+      id: 'welcome-' + Date.now(),
+      type: 'therapist',
+      content: "Hello! Welcome to Talk2Me. I'm here to provide a safe, supportive space for you to share your thoughts and feelings. I've reviewed your recent journal entries to better understand your journey. How are you feeling today, and what would you like to talk about?",
+      timestamp: new Date()
+    };
+    setMessages([welcomeMessage]);
+  };
+
   // Initialize speech recognition
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -68,17 +106,6 @@ const Therapy: React.FC = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  // Load initial welcome message
-  useEffect(() => {
-    const welcomeMessage: ChatMessage = {
-      id: 'welcome-' + Date.now(),
-      type: 'therapist',
-      content: "Hello! Welcome to Talk2Me. I'm here to provide a safe, supportive space for you to share your thoughts and feelings. I've reviewed your recent journal entries to better understand your journey. How are you feeling today, and what would you like to talk about?",
-      timestamp: new Date()
-    };
-    setMessages([welcomeMessage]);
-  }, []);
 
   const startRecording = async () => {
     try {
@@ -212,20 +239,21 @@ const Therapy: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center mb-8"
+        className="text-center mb-6"
       >
-        <div className="flex items-center justify-center mb-4">
-          <Heart className="mr-3 text-pink-500" size={32} />
-          <h1 className="text-4xl font-bold text-night-text">Talk2Me</h1>
+        <div className="flex items-center justify-center gap-3">
+          <Heart className="text-pink-500" size={28} />
+          <h1 className="text-3xl font-bold text-night-text">Talk2Me:</h1>
+          <span className="text-base text-night-text-secondary">
+            Your AI companion for meaningful conversations and personal support
+          </span>
         </div>
-        <p className="text-lg text-night-text-secondary">
-          Your AI companion for meaningful conversations and personal support
-        </p>
       </motion.div>
 
-      {/* Chat Messages */}
-      <Card className="h-96 overflow-y-auto mb-6">
-        <CardContent className="p-4 space-y-4">
+      {/* Single Chat Window */}
+      <Card className="h-[600px] flex flex-col">
+        {/* Chat Messages Area */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.map((message) => (
             <motion.div
               key={message.id}
@@ -233,27 +261,27 @@ const Therapy: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className={`flex items-start gap-3 max-w-[80%] ${message.type === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+              <div className={`flex items-start gap-2 max-w-[85%] ${message.type === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
                   message.type === 'user' 
                     ? 'bg-night-accent text-white' 
                     : 'bg-pink-500 text-white'
                 }`}>
-                  {message.type === 'user' ? <User size={16} /> : <Heart size={16} />}
+                  {message.type === 'user' ? <User size={12} /> : <Heart size={12} />}
                 </div>
-                <div className={`rounded-2xl px-4 py-3 ${
+                <div className={`rounded-xl px-3 py-2 ${
                   message.type === 'user'
                     ? 'bg-night-accent text-white'
                     : 'bg-night-surface border border-night-border text-night-text'
                 }`}>
                   <p className="text-sm leading-relaxed">{message.content}</p>
                   {message.isAudio && (
-                    <div className="flex items-center mt-2 text-xs opacity-75">
-                      <Volume2 size={12} className="mr-1" />
+                    <div className="flex items-center mt-1 text-xs opacity-75">
+                      <Volume2 size={10} className="mr-1" />
                       Voice message
                     </div>
                   )}
-                  <p className="text-xs mt-2 opacity-75">
+                  <p className="text-xs mt-1 opacity-75">
                     {message.timestamp.toLocaleTimeString(undefined, {
                       hour: '2-digit',
                       minute: '2-digit'
@@ -270,16 +298,16 @@ const Therapy: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               className="flex justify-start"
             >
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-pink-500 text-white flex items-center justify-center">
-                  <Heart size={16} />
+              <div className="flex items-start gap-2">
+                <div className="w-6 h-6 rounded-full bg-pink-500 text-white flex items-center justify-center">
+                  <Heart size={12} />
                 </div>
-                <div className="bg-night-surface border border-night-border rounded-2xl px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-pink-500 rounded-full animate-pulse"></div>
-                    <div className="w-2 h-2 bg-pink-500 rounded-full animate-pulse delay-75"></div>
-                    <div className="w-2 h-2 bg-pink-500 rounded-full animate-pulse delay-150"></div>
-                    <span className="text-sm text-night-text-secondary ml-2">Talk2Me is thinking...</span>
+                <div className="bg-night-surface border border-night-border rounded-xl px-3 py-2">
+                  <div className="flex items-center gap-1">
+                    <div className="w-1.5 h-1.5 bg-pink-500 rounded-full animate-pulse"></div>
+                    <div className="w-1.5 h-1.5 bg-pink-500 rounded-full animate-pulse delay-75"></div>
+                    <div className="w-1.5 h-1.5 bg-pink-500 rounded-full animate-pulse delay-150"></div>
+                    <span className="text-xs text-night-text-secondary ml-2">Talk2Me is thinking...</span>
                   </div>
                 </div>
               </div>
@@ -287,24 +315,22 @@ const Therapy: React.FC = () => {
           )}
           
           <div ref={messagesEndRef} />
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Input Area */}
-      <Card>
-        <CardContent className="p-4">
+        {/* Input Area - Fixed at bottom */}
+        <div className="border-t border-night-border p-4">
           {/* Audio Recording */}
           {isRecording && (
-            <div className="mb-4 p-4 bg-pink-50 dark:bg-pink-900/20 rounded-lg border border-pink-200 dark:border-pink-800">
+            <div className="mb-3 p-3 bg-pink-50 dark:bg-pink-900/20 rounded-lg border border-pink-200 dark:border-pink-800">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center">
-                  <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></div>
-                  <span className="text-sm font-medium text-pink-700 dark:text-pink-300">Recording...</span>
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mr-2"></div>
+                  <span className="text-xs font-medium text-pink-700 dark:text-pink-300">Recording...</span>
                 </div>
-                <span className="text-sm text-pink-600 dark:text-pink-400">{formatTime(recordingTime)}</span>
+                <span className="text-xs text-pink-600 dark:text-pink-400">{formatTime(recordingTime)}</span>
               </div>
               {liveTranscription && (
-                <div className="text-sm text-pink-800 dark:text-pink-200 bg-white/50 dark:bg-black/20 p-2 rounded">
+                <div className="text-xs text-pink-800 dark:text-pink-200 bg-white/50 dark:bg-black/20 p-2 rounded">
                   <strong>Live transcription:</strong> {liveTranscription}
                 </div>
               )}
@@ -312,13 +338,13 @@ const Therapy: React.FC = () => {
           )}
 
           {/* Text Input */}
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               placeholder={isRecording ? "Speaking... (live transcription active)" : "Share your thoughts, feelings, or ask for support..."}
-              className="flex-1 p-3 bg-night-surface border border-night-border rounded-lg resize-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-              rows={3}
+              className="flex-1 p-2 bg-night-surface border border-night-border rounded-lg resize-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              rows={2}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
                   e.preventDefault();
@@ -327,24 +353,24 @@ const Therapy: React.FC = () => {
               }}
               disabled={isLoading || isRecording}
             />
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1">
               {!isRecording ? (
                 <>
                   <Button
                     onClick={startRecording}
                     variant="outline"
                     size="sm"
-                    className="w-12 h-12 p-0 border-pink-500 text-pink-500 hover:bg-pink-500 hover:text-white"
+                    className="w-10 h-10 p-0 border-pink-500 text-pink-500 hover:bg-pink-500 hover:text-white"
                   >
-                    <Mic size={18} />
+                    <Mic size={16} />
                   </Button>
                   <Button
                     onClick={handleTextSubmit}
                     disabled={!inputText.trim() || isLoading}
                     size="sm"
-                    className="w-12 h-12 p-0 bg-pink-500 hover:bg-pink-600"
+                    className="w-10 h-10 p-0 bg-pink-500 hover:bg-pink-600"
                   >
-                    <Send size={18} />
+                    <Send size={16} />
                   </Button>
                 </>
               ) : (
@@ -353,27 +379,27 @@ const Therapy: React.FC = () => {
                     onClick={stopRecording}
                     variant="outline"
                     size="sm"
-                    className="w-12 h-12 p-0 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+                    className="w-10 h-10 p-0 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
                   >
-                    <Square size={18} />
+                    <Square size={16} />
                   </Button>
                   <Button
                     onClick={handleAudioSubmit}
                     disabled={!liveTranscription.trim()}
                     size="sm"
-                    className="w-12 h-12 p-0 bg-pink-500 hover:bg-pink-600"
+                    className="w-10 h-10 p-0 bg-pink-500 hover:bg-pink-600"
                   >
-                    <Send size={18} />
+                    <Send size={16} />
                   </Button>
                 </>
               )}
             </div>
           </div>
           
-          <div className="mt-3 text-xs text-night-text-secondary text-center">
+          <div className="mt-2 text-xs text-night-text-secondary text-center">
             Press Enter to send • Hold Mic to record voice messages • Shift+Enter for new line
           </div>
-        </CardContent>
+        </div>
       </Card>
     </div>
   );

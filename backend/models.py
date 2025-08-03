@@ -173,6 +173,7 @@ class DashboardStats(BaseModel):
     total_entries: int
     stories_generated: int
     weekly_streak: int = 0
+    mem_search_questions: int = 0
 
 
 # Error models
@@ -239,6 +240,24 @@ class NarrativeHistory(BaseModel):
 class NarrativeHistoryResponse(BaseModel):
     narratives: List[NarrativeHistory]
     total_count: int
+
+
+class QueryRequest(BaseModel):
+    query: str
+    entries: List[dict]
+    start_date: str
+    end_date: str
+
+
+class QueryResponse(BaseModel):
+    response: str
+    timestamp: datetime
+
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
 
 
 # Therapy models

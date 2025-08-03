@@ -15,8 +15,6 @@ interface TimelineEntry {
 }
 
 const Narrate: React.FC = () => {
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
   const [timelineData, setTimelineData] = useState<TimelineEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [narrating, setNarrating] = useState(false);
@@ -27,73 +25,137 @@ const Narrate: React.FC = () => {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [generatingImage, setGeneratingImage] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [narrativeHistory, setNarrativeHistory] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [historySkip, setHistorySkip] = useState(0);
-  const [totalHistoryCount, setTotalHistoryCount] = useState(0);
-  const [expandedNarratives, setExpandedNarratives] = useState<Set<number>>(new Set());
   const [generatingAudioFor, setGeneratingAudioFor] = useState<number | null>(null);
   const [generatingImageFor, setGeneratingImageFor] = useState<number | null>(null);
+  const [queryText, setQueryText] = useState('');
+  const [queryResponse, setQueryResponse] = useState('');
+  const [isQuerying, setIsQuerying] = useState(false);
+  const [queryHistory, setQueryHistory] = useState<Array<{
+    id: string, 
+    question: string, 
+    answer: string, 
+    timestamp: Date,
+    audioUrl?: string,
+    audioBlob?: Blob,
+    imageUrl?: string
+  }>>([]);
+  const [displayedSearches, setDisplayedSearches] = useState<number>(3);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  // Set default date range (last 7 days)
+  // Load query history from localStorage on component mount
   useEffect(() => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 7);
-    
-    setEndDate(end.toISOString().split('T')[0]);
-    setStartDate(start.toISOString().split('T')[0]);
-  }, []);
-
-  // Fetch narrative history on component mount
-  useEffect(() => {
-    fetchNarrativeHistory();
-  }, []);
-
-  const fetchNarrativeHistory = async (skip: number = 0) => {
-    setLoadingHistory(true);
-    try {
-      const response = await axios.get('/api/narrate/history', {
-        params: { skip, limit: 3 }
-      });
-      
-      if (skip === 0) {
-        setNarrativeHistory(response.data.narratives);
-      } else {
-        setNarrativeHistory(prev => [...prev, ...response.data.narratives]);
+    const savedHistory = localStorage.getItem('memsearch_history');
+    if (savedHistory) {
+      try {
+        const parsedHistory = JSON.parse(savedHistory);
+        // Convert timestamp strings back to Date objects
+        const historyWithDates = parsedHistory.map((item: any) => ({
+          ...item,
+          timestamp: new Date(item.timestamp)
+        }));
+        setQueryHistory(historyWithDates);
+      } catch (error) {
+        console.error('Failed to load memory search history:', error);
       }
-      setTotalHistoryCount(response.data.total_count);
-      setHistorySkip(skip + response.data.narratives.length);
-    } catch (error) {
-      toast.error('Failed to load narrative history');
-    } finally {
-      setLoadingHistory(false);
+    }
+  }, []);
+
+  // Save query history to localStorage whenever it changes
+  useEffect(() => {
+    if (queryHistory.length > 0) {
+      localStorage.setItem('memsearch_history', JSON.stringify(queryHistory));
+    } else {
+      // Remove the key if no history exists
+      localStorage.removeItem('memsearch_history');
+    }
+  }, [queryHistory]);
+
+  const loadMoreSearches = () => {
+    setLoadingMore(true);
+    // Simulate loading delay for better UX
+    setTimeout(() => {
+      setDisplayedSearches(prev => prev + 3);
+      setLoadingMore(false);
+    }, 500);
+  };
+
+  const clearSearchHistory = () => {
+    if (window.confirm('Are you sure you want to clear all your memory search history? This action cannot be undone.')) {
+      setQueryHistory([]);
+      setDisplayedSearches(3);
+      localStorage.removeItem('memsearch_history');
+      toast.success('Search history cleared');
     }
   };
 
-  const loadMoreHistory = () => {
-    fetchNarrativeHistory(historySkip);
-  };
+  const askQuestion = async () => {
+    if (!queryText.trim()) {
+      toast.error('Please enter a question');
+      return;
+    }
 
-  const toggleNarrativeExpansion = (narrativeId: number) => {
-    setExpandedNarratives(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(narrativeId)) {
-        newSet.delete(narrativeId);
-      } else {
-        newSet.add(narrativeId);
+    setIsQuerying(true);
+    const toastId = toast.loading('Searching your memories...');
+
+    try {
+      // Get ALL user's entries for context (no date limit)
+      const response = await axios.get('/api/timeline', {
+        params: {
+          all_stories: true // Get all stories, not just recent ones
+        }
+      });
+
+      const timelineData = response.data.entries;
+      
+      if (timelineData.length === 0) {
+        toast.error('No memories found. Please create some journal entries first.', { id: toastId });
+        return;
       }
-      return newSet;
-    });
+
+      // Prepare the data for query
+      const entriesData = timelineData
+        .filter((day: any) => day.entry)
+        .map((day: any) => ({
+          date: day.date,
+          text_content: day.entry?.text_content || '',
+          ai_generated_story: day.entry?.ai_generated_story || ''
+        }));
+
+      const queryResponse = await axios.post('/api/narrate/query', {
+        query: queryText.trim(),
+        entries: entriesData,
+        start_date: 'all', // Indicate we want all stories
+        end_date: 'all'
+      });
+
+      const answer = queryResponse.data.response;
+      
+      // Add to query history
+      const newQuery = {
+        id: Date.now().toString(),
+        question: queryText.trim(),
+        answer: answer,
+        timestamp: new Date()
+      };
+      
+      setQueryHistory(prev => [newQuery, ...prev]);
+      setQueryText('');
+      toast.success('Memory search complete!', { id: toastId });
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.detail || 'Failed to search your memories';
+      toast.error(errorMessage, { id: toastId });
+    } finally {
+      setIsQuerying(false);
+    }
   };
 
-  const generateAudioForNarrative = async (narrativeId: number, narrativeText: string) => {
-    setGeneratingAudioFor(narrativeId);
+  const generateAudioForQA = async (id: string, answer: string) => {
+    setGeneratingAudioFor(parseInt(id));
     const toastId = toast.loading('Generating audio...');
 
     try {
       const response = await axios.post('/api/narrate/audio', {
-        text: narrativeText
+        text: answer
       }, {
         responseType: 'blob'
       });
@@ -101,16 +163,16 @@ const Narrate: React.FC = () => {
       const blob = new Blob([response.data], { type: 'audio/mpeg' });
       const url = URL.createObjectURL(blob);
       
-      // Update the narrative in history with audio URL
-      setNarrativeHistory(prev => prev.map(narrative => 
-        narrative.id === narrativeId 
-          ? { ...narrative, audio_url: url, audio_blob: blob }
-          : narrative
+      // Update the query history with audio URL
+      setQueryHistory(prev => prev.map(item => 
+        item.id === id 
+          ? { ...item, audioUrl: url, audioBlob: blob }
+          : item
       ));
       
       // Save audio URL to database
       try {
-        await axios.put(`/api/narrate/${narrativeId}/audio`, null, {
+        await axios.put(`/api/narrate/query/${id}/audio`, null, {
           params: { audio_url: url }
         });
       } catch (error) {
@@ -127,25 +189,25 @@ const Narrate: React.FC = () => {
     }
   };
 
-  const generateImageForNarrative = async (narrativeId: number, narrativeText: string) => {
-    setGeneratingImageFor(narrativeId);
+  const generateImageForQA = async (id: string, answer: string) => {
+    setGeneratingImageFor(parseInt(id));
     const toastId = toast.loading('Generating image...');
 
     try {
       const response = await axios.post('/api/narrate/image', {
-        text: narrativeText
+        text: answer
       });
 
-      // Update the narrative in history with image URL
-      setNarrativeHistory(prev => prev.map(narrative => 
-        narrative.id === narrativeId 
-          ? { ...narrative, image_url: response.data.image_url }
-          : narrative
+      // Update the query history with image URL
+      setQueryHistory(prev => prev.map(item => 
+        item.id === id 
+          ? { ...item, imageUrl: response.data.image_url }
+          : item
       ));
       
       // Save image URL to database
       try {
-        await axios.put(`/api/narrate/${narrativeId}/image`, null, {
+        await axios.put(`/api/narrate/query/${id}/image`, null, {
           params: { image_url: response.data.image_url }
         });
       } catch (error) {
@@ -161,20 +223,20 @@ const Narrate: React.FC = () => {
     }
   };
 
-  const playNarrativeAudio = (audioUrl: string) => {
+  const playQAAudio = (audioUrl: string) => {
     const audio = new Audio(audioUrl);
     audio.onended = () => setIsPlaying(false);
     audio.play();
     setIsPlaying(true);
   };
 
-  const downloadNarrativeAudio = (narrativeId: number, startDate: string, endDate: string) => {
-    const narrative = narrativeHistory.find(n => n.id === narrativeId);
-    if (narrative?.audio_blob) {
-      const url = URL.createObjectURL(narrative.audio_blob);
+  const downloadQAAudio = (id: string, question: string) => {
+    const item = queryHistory.find(q => q.id === id);
+    if (item?.audioBlob) {
+      const url = URL.createObjectURL(item.audioBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `narrative-${startDate}-to-${endDate}.mp3`;
+      a.download = `question-${question.replace(/\s+/g, '-').toLowerCase()}.mp3`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -182,213 +244,13 @@ const Narrate: React.FC = () => {
     }
   };
 
-  const downloadNarrativeImage = (imageUrl: string, startDate: string, endDate: string) => {
+  const downloadQAImage = (imageUrl: string, question: string) => {
     const a = document.createElement('a');
     a.href = imageUrl;
-    a.download = `narrative-${startDate}-to-${endDate}.jpg`;
+    a.download = `question-${question.replace(/\s+/g, '-').toLowerCase()}.jpg`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-  };
-
-  const fetchTimeline = async () => {
-    if (!startDate || !endDate) {
-      toast.error('Please select both start and end dates');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await axios.get('/api/timeline', {
-        params: {
-          start_date: startDate,
-          end_date: endDate
-        }
-      });
-      setTimelineData(response.data.entries);
-      toast.success(`Found ${response.data.entries.length} entries in the selected period`);
-    } catch (error) {
-      toast.error('Failed to load timeline');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateNarrative = async () => {
-    if (timelineData.length === 0) {
-      toast.error('No entries found for the selected period');
-      return;
-    }
-
-    setNarrating(true);
-    const toastId = toast.loading('Generating your narrative...');
-
-    try {
-      // Prepare the data for narrative generation
-      const entriesData = timelineData
-        .filter(day => day.entry)
-        .map(day => ({
-          date: day.date,
-          text_content: day.entry?.text_content || '',
-          ai_generated_story: day.entry?.ai_generated_story || ''
-        }));
-
-      const response = await axios.post('/api/narrate', {
-        entries: entriesData,
-        start_date: startDate,
-        end_date: endDate
-      });
-
-      setNarrative(response.data.narrative);
-      setShowNarrative(true);
-      toast.success('Narrative generated successfully!', { id: toastId });
-      
-      // Refresh narrative history
-      fetchNarrativeHistory(0);
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.detail || 'Failed to generate narrative';
-      toast.error(errorMessage, { id: toastId });
-    } finally {
-      setNarrating(false);
-    }
-  };
-
-  const generateAudio = async () => {
-    if (!narrative) {
-      toast.error('No narrative to convert to audio');
-      return;
-    }
-
-    const toastId = toast.loading('Generating audio...');
-
-    try {
-      const response = await axios.post('/api/narrate/audio', {
-        text: narrative
-      }, {
-        responseType: 'blob'
-      });
-
-      const blob = new Blob([response.data], { type: 'audio/mpeg' });
-      const url = URL.createObjectURL(blob);
-      
-      setAudioBlob(blob);
-      setAudioUrl(url);
-      toast.success('Audio generated successfully!', { id: toastId });
-    } catch (error: any) {
-      console.error('Audio generation error:', error);
-      const errorMessage = error.response?.data?.detail || 'Failed to generate audio';
-      toast.error(errorMessage, { id: toastId });
-      
-      // Fallback to browser TTS
-      toast.success('Trying browser text-to-speech as fallback...', { id: toastId });
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(narrative);
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        utterance.volume = 1;
-        
-        // Create a simple audio URL for the browser TTS
-        const audioElement = new Audio();
-        audioElement.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT';
-        setAudioUrl(audioElement.src);
-        setAudioBlob(null);
-        
-        utterance.onend = () => {
-          setIsPlaying(false);
-        };
-        
-        speechSynthesis.speak(utterance);
-        setIsPlaying(true);
-        toast.success('Using browser text-to-speech', { id: toastId });
-      }
-    }
-  };
-
-  const playAudio = () => {
-    if (audioUrl && audioBlob) {
-      // Server-generated audio
-      const audio = new Audio(audioUrl);
-      audio.onended = () => setIsPlaying(false);
-      audio.play();
-      setIsPlaying(true);
-    } else if (audioUrl && !audioBlob) {
-      // Browser TTS fallback
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(narrative);
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        utterance.volume = 1;
-        
-        utterance.onend = () => {
-          setIsPlaying(false);
-        };
-        
-        speechSynthesis.speak(utterance);
-        setIsPlaying(true);
-      }
-    }
-  };
-
-  const stopAudio = () => {
-    setIsPlaying(false);
-    // Stop all audio elements
-    const audioElements = document.querySelectorAll('audio');
-    audioElements.forEach(audio => {
-      audio.pause();
-      audio.currentTime = 0;
-    });
-    // Stop browser TTS
-    if ('speechSynthesis' in window) {
-      speechSynthesis.cancel();
-    }
-  };
-
-  const downloadAudio = () => {
-    if (audioBlob) {
-      const url = URL.createObjectURL(audioBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `narrative-${startDate}-to-${endDate}.mp3`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-  };
-
-  const generateImage = async () => {
-    if (!narrative) {
-      toast.error('No narrative to generate image from');
-      return;
-    }
-
-    setGeneratingImage(true);
-    const toastId = toast.loading('Generating image...');
-
-    try {
-      const response = await axios.post('/api/narrate/image', {
-        text: narrative
-      });
-
-      setImageUrl(response.data.image_url);
-      toast.success('Image generated successfully!', { id: toastId });
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.detail || 'Failed to generate image';
-      toast.error(errorMessage, { id: toastId });
-    } finally {
-      setGeneratingImage(false);
-    }
-  };
-
-  const downloadImage = () => {
-    if (imageUrl) {
-      const a = document.createElement('a');
-      a.href = imageUrl;
-      a.download = `narrative-${startDate}-to-${endDate}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
   };
 
   // Cleanup audio URL and stop audio on unmount
@@ -435,391 +297,202 @@ const Narrate: React.FC = () => {
       <motion.div className="text-center mb-8" variants={itemVariants}>
         <h1 className="text-4xl font-bold mb-2 flex items-center justify-center">
           <Mic className="mr-3 text-night-accent" />
-          Narrate Your Life
+          MemSearch
         </h1>
         <p className="text-lg text-night-text-secondary">
-          Select a time period and let AI create a beautiful narrative from your memories
+          Search and analyze your memories with natural language queries
         </p>
       </motion.div>
 
-      <motion.div className="grid grid-cols-1 lg:grid-cols-2 gap-8" variants={itemVariants}>
-        {/* Date Selection */}
-        <Card variant="elevated">
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Calendar className="mr-2" />
-              Select Time Period
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Start Date</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full p-3 bg-night-surface rounded-md focus:ring-2 focus:ring-night-accent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">End Date</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full p-3 bg-night-surface rounded-md focus:ring-2 focus:ring-night-accent"
-              />
-            </div>
-            <Button 
-              onClick={fetchTimeline} 
-              loading={loading}
-              className="w-full"
-            >
-              <Calendar className="mr-2" />
-              Load Entries
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Summary */}
+      <motion.div className="grid grid-cols-1 gap-8" variants={itemVariants}>
+        {/* Natural Language Query - Full Width */}
         <Card variant="elevated">
           <CardHeader>
             <CardTitle className="flex items-center">
               <Sparkles className="mr-2" />
-              Summary
+              Search Your Memories
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            {timelineData.length > 0 ? (
-              <div className="space-y-3">
-                <p className="text-night-text-secondary">
-                  Found <span className="font-semibold text-night-accent">{timelineData.length}</span> entries
-                </p>
-                <div className="space-y-2">
-                  {timelineData.slice(0, 3).map((day, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 bg-night-surface rounded">
-                      <span className="text-sm">
-                        {day.date ? (() => {
-                          try {
-                            return new Date(day.date).toLocaleDateString(undefined, {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric'
-                            });
-                          } catch (error) {
-                            return day.date;
-                          }
-                        })() : 'No date'}
-                      </span>
-                      <span className="text-xs text-night-text-secondary">
-                        {day.entry ? 'Has story' : 'No content'}
-                      </span>
-                    </div>
-                  ))}
-                  {timelineData.length > 3 && (
-                    <p className="text-xs text-night-text-secondary">
-                      ... and {timelineData.length - 3} more entries
-                    </p>
-                  )}
-                </div>
-                <Button 
-                  onClick={generateNarrative}
-                  loading={narrating}
-                  className="w-full mt-4"
-                  disabled={timelineData.length === 0}
-                >
-                  <Play className="mr-2" />
-                  Generate Narrative
-                </Button>
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Calendar className="mx-auto mb-4 text-night-text-secondary" size={48} />
-                <p className="text-night-text-secondary">
-                  Select dates and load entries to see your timeline
-                </p>
-              </div>
-            )}
+          <CardContent className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Your Question</label>
+              <textarea
+                value={queryText}
+                onChange={(e) => setQueryText(e.target.value)}
+                placeholder="Ask anything about your memories... e.g., 'What happened last week?' or 'Narrate my last week happenings' or 'What patterns do you see in my routine?' or 'How have I grown over time?'"
+                className="w-full h-32 p-3 bg-night-surface rounded-md focus:ring-2 focus:ring-night-accent resize-none"
+                rows={4}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && !isQuerying) {
+                    e.preventDefault();
+                    askQuestion();
+                  }
+                }}
+              />
+            </div>
+            <div className="flex justify-center">
+              <Button 
+                onClick={askQuestion}
+                loading={isQuerying}
+                className="w-full md:w-auto"
+              >
+                <Sparkles className="mr-2" />
+                Search Memories
+              </Button>
+            </div>
+            
+            <div className="text-xs text-night-text-secondary text-center">
+              Press Enter to search • Shift+Enter for new line
+            </div>
           </CardContent>
         </Card>
-      </motion.div>
 
-      {/* Generated Narrative */}
-      {showNarrative && (
-        <motion.div 
-          className="mt-8"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <Card variant="elevated">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center">
-                  <Sparkles className="mr-2 text-night-accent" />
-                  Your Narrative
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  {!audioUrl ? (
-                    <Button 
-                      onClick={generateAudio}
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center"
-                    >
-                      <Volume2 className="mr-2" size={16} />
-                      Generate Audio
-                    </Button>
-                  ) : (
-                    <>
-                      {!isPlaying ? (
-                        <Button 
-                          onClick={playAudio}
-                          variant="outline"
-                          size="sm"
-                          className="flex items-center"
-                        >
-                          <Play className="mr-2" size={16} />
-                          Play Audio
-                        </Button>
-                      ) : (
-                        <Button 
-                          onClick={stopAudio}
-                          variant="outline"
-                          size="sm"
-                          className="flex items-center"
-                        >
-                          <VolumeX className="mr-2" size={16} />
-                          Stop Audio
-                        </Button>
-                      )}
-                      <Button 
-                        onClick={downloadAudio}
-                        variant="outline"
-                        size="sm"
-                        className="flex items-center"
-                      >
-                        <Download className="mr-2" size={16} />
-                        Download Audio
-                      </Button>
-                    </>
-                  )}
-                  
-                  {!imageUrl ? (
-                    <Button 
-                      onClick={generateImage}
-                      loading={generatingImage}
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center"
-                    >
-                      <ImageIcon className="mr-2" size={16} />
-                      Generate Image
-                    </Button>
-                  ) : (
-                    <Button 
-                      onClick={downloadImage}
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center"
-                    >
-                      <Download className="mr-2" size={16} />
-                      Download Image
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-invert max-w-none">
-                <p className="text-night-text whitespace-pre-wrap leading-relaxed">
-                  {narrative}
-                </p>
-              </div>
-              
-              {/* Generated Image */}
-              {imageUrl && (
-                <div className="mt-6">
-                  <h3 className="text-lg font-semibold mb-3 flex items-center">
-                    <ImageIcon className="mr-2 text-night-accent" />
-                    Generated Image
-                  </h3>
-                  <div className="relative">
-                    <img 
-                      src={imageUrl} 
-                      alt="Narrative illustration" 
-                      className="w-full max-w-md mx-auto rounded-lg shadow-lg"
-                    />
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
-      {/* Narrative History */}
-      <motion.div 
-        className="mt-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-      >
+        {/* Query History - Full Width */}
         <Card variant="elevated">
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <Calendar className="mr-2 text-night-accent" />
-              Previous Narrations
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Calendar className="mr-2" />
+                Your Memory Searches
+              </div>
+              {queryHistory.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-night-text-secondary">
+                    Showing {Math.min(displayedSearches, queryHistory.length)} of {queryHistory.length} searches
+                  </span>
+                  <Button
+                    onClick={clearSearchHistory}
+                    variant="outline"
+                    size="sm"
+                    className="flex items-center gap-2"
+                  >
+                    <VolumeX className="mr-1" size={16} />
+                    Clear History
+                  </Button>
+                </div>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loadingHistory && narrativeHistory.length === 0 ? (
-              <div className="text-center py-8">
-                <Loader className="mx-auto mb-4 animate-spin" size={32} />
-                <p className="text-night-text-secondary">Loading your narrative history...</p>
-              </div>
-            ) : narrativeHistory.length > 0 ? (
-              <div className="space-y-4">
-                {narrativeHistory.map((narrative) => (
-                  <div key={narrative.id} className="border border-night-border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h3 className="font-semibold text-night-text">
-                          {(() => {
-                            try {
-                              const start = narrative.start_date ? new Date(narrative.start_date).toLocaleDateString(undefined, {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric'
-                              }) : 'No start date';
-                              const end = narrative.end_date ? new Date(narrative.end_date).toLocaleDateString(undefined, {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric'
-                              }) : 'No end date';
-                              return `${start} - ${end}`;
-                            } catch (error) {
-                              return `${narrative.start_date || 'No start date'} - ${narrative.end_date || 'No end date'}`;
-                            }
-                          })()}
-                        </h3>
-                        <p className="text-sm text-night-text-secondary">
-                          {narrative.created_at ? formatDateTime(narrative.created_at, {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            timeZoneName: undefined
-                          }) : 'No creation date'}
-                        </p>
+            {queryHistory.length > 0 ? (
+              <div className="space-y-6">
+                {queryHistory.slice(0, displayedSearches).map((item) => (
+                  <motion.div 
+                    key={item.id} 
+                    className="border border-night-border rounded-lg p-6"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-night-accent">Q:</span>
+                          <span className="text-sm text-night-text">{item.question}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {/* Audio and Image Generation Options */}
+                          <Button 
+                            onClick={() => generateAudioForQA(item.id, item.answer)}
+                            loading={generatingAudioFor === parseInt(item.id)}
+                            variant="outline"
+                            size="sm"
+                            className="p-2"
+                            title="Generate Audio"
+                          >
+                            <Volume2 size={16} />
+                          </Button>
+                          <Button 
+                            onClick={() => generateImageForQA(item.id, item.answer)}
+                            loading={generatingImageFor === parseInt(item.id)}
+                            variant="outline"
+                            size="sm"
+                            className="p-2"
+                            title="Generate Image"
+                          >
+                            <ImageIcon size={16} />
+                          </Button>
+                          
+                          {/* Audio Play/Download */}
+                          {item.audioUrl && (
+                            <div className="flex items-center gap-2">
+                              <Button 
+                                onClick={() => item.audioUrl && playQAAudio(item.audioUrl)}
+                                variant="outline"
+                                size="sm"
+                                className="p-2"
+                                title="Play Audio"
+                              >
+                                <Play size={16} />
+                              </Button>
+                              <Button 
+                                onClick={() => downloadQAAudio(item.id, item.question)}
+                                variant="outline"
+                                size="sm"
+                                className="p-2"
+                                title="Download Audio"
+                              >
+                                <Download size={16} />
+                              </Button>
+                            </div>
+                          )}
+                          
+                          {/* Image Download */}
+                          {item.imageUrl && (
+                            <Button 
+                              onClick={() => item.imageUrl && downloadQAImage(item.imageUrl, item.question)}
+                              variant="outline"
+                              size="sm"
+                              className="p-2"
+                              title="Download Image"
+                            >
+                              <Download size={16} />
+                            </Button>
+                          )}
+                          
+                          <span className="text-xs text-night-text-secondary">
+                            {item.timestamp.toLocaleString()}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {/* Audio Controls */}
-                        {narrative.audio_url ? (
-                          <div className="flex items-center gap-1">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => playNarrativeAudio(narrative.audio_url)}
-                            >
-                              <Play className="mr-1" size={14} />
-                              Play
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => downloadNarrativeAudio(narrative.id, narrative.start_date, narrative.end_date)}
-                            >
-                              <Download className="mr-1" size={14} />
-                              Download
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button 
-                            onClick={() => generateAudioForNarrative(narrative.id, narrative.narrative_text)}
-                            loading={generatingAudioFor === narrative.id}
-                            variant="outline" 
-                            size="sm"
-                          >
-                            <Volume2 className="mr-1" size={14} />
-                            Generate Audio
-                          </Button>
-                        )}
-                        
-                        {/* Image Controls */}
-                        {narrative.image_url ? (
-                          <div className="flex items-center gap-1">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => downloadNarrativeImage(narrative.image_url, narrative.start_date, narrative.end_date)}
-                            >
-                              <Download className="mr-1" size={14} />
-                              Download
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button 
-                            onClick={() => generateImageForNarrative(narrative.id, narrative.narrative_text)}
-                            loading={generatingImageFor === narrative.id}
-                            variant="outline" 
-                            size="sm"
-                          >
-                            <ImageIcon className="mr-1" size={14} />
-                            Generate Image
-                          </Button>
-                        )}
+                    </div>
+                    <div className="mb-4">
+                      <div className="flex items-start gap-2">
+                        <span className="text-sm font-medium text-night-accent mt-0.5">A:</span>
+                        <p className="text-sm text-night-text bg-night-surface p-3 rounded flex-1 whitespace-pre-wrap">
+                          {item.answer}
+                        </p>
                       </div>
                     </div>
                     
-                    <div className="mb-3">
-                      <p className="text-night-text">
-                        {expandedNarratives.has(narrative.id) 
-                          ? narrative.narrative_text
-                          : narrative.narrative_text.split('\n').slice(0, 3).join('\n') + (narrative.narrative_text.split('\n').length > 3 ? '...' : '')
-                        }
-                      </p>
-                      {narrative.narrative_text.split('\n').length > 3 && (
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          onClick={() => toggleNarrativeExpansion(narrative.id)}
-                          className="mt-2"
-                        >
-                          {expandedNarratives.has(narrative.id) ? 'Show Less' : 'Show More'}
-                        </Button>
-                      )}
-                    </div>
-
-                    {narrative.image_url && (
-                      <div className="mb-3">
+                    {/* Generated Image Display */}
+                    {item.imageUrl && (
+                      <div className="mt-4">
                         <img 
-                          src={narrative.image_url} 
-                          alt="Narrative illustration" 
-                          className="w-full max-w-xs rounded-lg shadow-md"
+                          src={item.imageUrl} 
+                          alt="Generated illustration" 
+                          className="w-full max-w-md mx-auto rounded-lg shadow-lg"
                         />
                       </div>
                     )}
-                  </div>
+                  </motion.div>
                 ))}
-                
-                {narrativeHistory.length < totalHistoryCount && (
-                  <div className="text-center pt-4">
-                    <Button 
-                      onClick={loadMoreHistory}
-                      loading={loadingHistory}
-                      variant="outline"
+                {queryHistory.length > displayedSearches && (
+                  <div className="text-center mt-6">
+                    <Button
+                      onClick={loadMoreSearches}
+                      loading={loadingMore}
+                      className="w-full md:w-auto"
                     >
-                      Load More Narrations
+                      {loadingMore ? 'Loading...' : 'Load More Searches'}
                     </Button>
                   </div>
                 )}
               </div>
             ) : (
               <div className="text-center py-8">
-                <Calendar className="mx-auto mb-4 text-night-text-secondary" size={48} />
+                <Sparkles className="mx-auto mb-4 text-night-text-secondary" size={48} />
                 <p className="text-night-text-secondary">
-                  No previous narrations found. Create your first one above!
+                  Search your first memory to see your search history here!
                 </p>
               </div>
             )}

@@ -67,6 +67,8 @@ from models import (
     HighlightCreate,
     Highlight as HighlightModel,
     HighlightsResponse,
+    QueryResponse,
+    QueryRequest,
 )
 from ai_service import ai_service
 
@@ -179,6 +181,7 @@ async def get_dashboard_stats(
         total_entries=total_entries,
         stories_generated=stories_generated,
         weekly_streak=weekly_streak,
+        mem_search_questions=0,  # TODO: Implement tracking of MemSearch questions
     )
 
 
@@ -536,52 +539,76 @@ async def get_timeline(
     db: Session = Depends(get_db),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    all_stories: Optional[bool] = False,
 ):
     """Get user's timeline with entries, audio, and images"""
 
-    # Parse dates
-    if start_date:
-        start_date = datetime.fromisoformat(start_date)
+    # If all_stories is True or no dates provided, get all stories
+    if all_stories or (not start_date and not end_date):
+        # Get all entries without date filtering
+        entries = (
+            db.query(Entry)
+            .filter(Entry.user_id == current_user.id)
+            .order_by(Entry.date.desc())
+            .all()
+        )
+
+        # Get all audio and images without date filtering
+        audio_files = (
+            db.query(AudioFile)
+            .filter(AudioFile.user_id == current_user.id)
+            .all()
+        )
+
+        images = (
+            db.query(Image)
+            .filter(Image.user_id == current_user.id)
+            .all()
+        )
     else:
-        start_date = now_utc() - timedelta(days=30)
+        # Parse dates for specific date range
+        if start_date:
+            start_date = datetime.fromisoformat(start_date)
+        else:
+            start_date = now_utc() - timedelta(days=30)
 
-    if end_date:
-        end_date = datetime.fromisoformat(end_date)
-    else:
-        end_date = now_utc()
+        if end_date:
+            end_date = datetime.fromisoformat(end_date)
+        else:
+            end_date = now_utc()
 
-    # Get entries in date range
-    entries = (
-        db.query(Entry)
-        .filter(
-            Entry.user_id == current_user.id,
-            Entry.date >= start_date,
-            Entry.date <= end_date,
+        # Get entries in date range
+        entries = (
+            db.query(Entry)
+            .filter(
+                Entry.user_id == current_user.id,
+                Entry.date >= start_date,
+                Entry.date <= end_date,
+            )
+            .order_by(Entry.date.desc())
+            .all()
         )
-        .order_by(Entry.date.desc())
-        .all()
-    )
 
-    # Get audio and images in date range
-    audio_files = (
-        db.query(AudioFile)
-        .filter(
-            AudioFile.user_id == current_user.id,
-            AudioFile.created_at >= start_date,
-            AudioFile.created_at <= end_date,
+        # Get audio and images in date range
+        audio_files = (
+            db.query(AudioFile)
+            .filter(
+                AudioFile.user_id == current_user.id,
+                AudioFile.created_at >= start_date,
+                AudioFile.created_at <= end_date,
+            )
+            .all()
         )
-        .all()
-    )
 
-    images = (
-        db.query(Image)
-        .filter(
-            Image.user_id == current_user.id,
-            Image.created_at >= start_date,
-            Image.created_at <= end_date,
+        images = (
+            db.query(Image)
+            .filter(
+                Image.user_id == current_user.id,
+                Image.created_at >= start_date,
+                Image.created_at <= end_date,
+            )
+            .all()
         )
-        .all()
-    )
 
     # Group by date
     timeline_entries = []
@@ -1289,3 +1316,42 @@ async def serve_image_file(
         raise HTTPException(status_code=404, detail="File not found")
 
     return {"file_path": file_path}
+
+
+@router.post("/narrate/query", response_model=QueryResponse)
+async def query_narratives(
+    request: QueryRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Query user's narratives using natural language"""
+    try:
+        if not request.query.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Query cannot be empty"
+            )
+
+        if not request.entries:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No entries provided for analysis"
+            )
+
+        # Generate query response using AI service
+        query_response = await ai_service.generate_query_response(
+            query=request.query,
+            entries=request.entries,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            username=current_user.username,
+        )
+
+        return QueryResponse(response=query_response, timestamp=now_utc())
+
+    except Exception as e:
+        print(f"Query error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process query: {str(e)}",
+        )

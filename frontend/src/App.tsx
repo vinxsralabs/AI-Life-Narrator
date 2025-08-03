@@ -9,7 +9,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Timeline from './pages/Timeline';
 import StoryView from './pages/StoryView';
-import Upload from './pages/Upload';
+
 import Narrate from './pages/Narrate';
 import MyReflections from './pages/MyReflections';
 import Therapy from './pages/Therapy';
@@ -137,22 +137,7 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/upload"
-            element={
-              <ProtectedRoute>
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.4, ease: "easeInOut" }}
-                >
-                  <Navbar />
-                  <Upload />
-                </motion.div>
-              </ProtectedRoute>
-            }
-          />
+
           <Route
             path="/narrate"
             element={

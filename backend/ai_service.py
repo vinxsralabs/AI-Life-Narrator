@@ -297,6 +297,127 @@ Write a 3-4 stanza poem that poetically describes this day.""",
             print(f"Error generating narrative image: {e}")
             return None
 
+    async def generate_query_response(
+        self,
+        query: str,
+        entries: List[Dict[str, Any]],
+        start_date: str,
+        end_date: str,
+        username: str,
+    ) -> Optional[str]:
+        """Generate a response to a natural language query about user's stories"""
+        try:
+            # Prepare entries data for analysis
+            entries_text = []
+            for entry in entries:
+                date = entry.get("date", "Unknown date")
+                text_content = entry.get("text_content", "")
+                ai_story = entry.get("ai_generated_story", "")
+                
+                # Use AI story if available, otherwise use text content
+                content = ai_story if ai_story else text_content
+                if content:
+                    entries_text.append(f"[{date}]: {content}")
+
+            if not entries_text:
+                if start_date == 'all' and end_date == 'all':
+                    return f"I don't see any stories or entries in your journal yet. Please create some journal entries first, and then I'll be able to answer questions about your life journey."
+                else:
+                    return f"I don't see any stories or entries for the period from {start_date} to {end_date}. Please make sure you have some content in your journal for this time period."
+
+            # Detect question type for appropriate response style
+            query_lower = query.lower().strip()
+            is_simple_question = any(word in query_lower for word in ['when', 'what', 'why', 'how', 'where', 'who'])
+            
+            # Create query prompt based on question type
+            time_period_text = "all your stories" if start_date == 'all' and end_date == 'all' else f"the period from {start_date} to {end_date}"
+            
+            if is_simple_question:
+                # Simple, direct response for when/what/why/how questions
+                query_prompt = f"""You are an AI assistant analyzing {username}'s personal stories and journal entries. The user has asked a specific question about their life.
+
+User's Question: "{query}"
+
+Time Period: {time_period_text}
+
+Stories and Entries:
+{chr(10).join(entries_text)}
+
+Your task:
+1. Analyze the provided stories and entries
+2. Provide a SIMPLE, DIRECT, and ACCURATE answer to the specific question
+3. Focus on facts and concrete information from their stories
+4. Be concise and to the point (50-150 words)
+5. If the question can't be answered from the available content, say so clearly
+
+Guidelines for simple questions (when/what/why/how):
+- Give direct, factual answers
+- Use specific dates and details when available
+- Avoid lengthy explanations
+- Be precise and accurate
+- If you don't have enough information, state that clearly
+- Keep the tone helpful but straightforward
+
+Remember: This is a specific question requiring a clear, factual response."""
+            else:
+                # Detailed, narrative response for other types of questions
+                query_prompt = f"""You are an AI assistant analyzing {username}'s personal stories and journal entries. The user has asked a question about their life during a specific time period.
+
+User's Question: "{query}"
+
+Time Period: {time_period_text}
+
+Stories and Entries:
+{chr(10).join(entries_text)}
+
+Your task:
+1. Analyze the provided stories and entries
+2. Answer the user's question based on the content
+3. Provide insights, patterns, or observations from their stories
+4. Be personal, warm, and insightful
+5. If the question can't be answered from the available content, explain why
+6. Keep your response focused and relevant to their question
+7. Use a conversational, friendly tone
+
+Guidelines:
+- Be empathetic and understanding
+- Highlight patterns or themes you notice
+- Provide specific examples from their stories when relevant
+- If they ask about emotions, analyze the emotional content
+- If they ask about routines, identify patterns in their daily life
+- If they ask about progress or growth, highlight positive developments
+- Keep responses informative but not overly long (200-400 words)
+
+Remember: This is personal content about someone's life. Be respectful, caring, and genuinely helpful."""
+
+            print(f"Generating query response for {username}, query: {query[:50]}... (simple question: {is_simple_question})")
+
+            # Adjust max_tokens based on question type
+            max_tokens = 200 if is_simple_question else 500
+            temperature = 0.3 if is_simple_question else 0.7
+
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a thoughtful AI assistant that analyzes personal stories and provides appropriate responses to questions about someone's life journey.",
+                    },
+                    {"role": "user", "content": query_prompt},
+                ],
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+
+            query_response = response.choices[0].message.content.strip()
+            print(f"Query response generated successfully, length: {len(query_response)}")
+
+            return query_response
+
+        except Exception as e:
+            print(f"Error generating query response: {e}")
+            return f"I'm sorry, {username}. I'm having trouble analyzing your stories right now. Please try again in a moment, or feel free to ask a different question about your journal entries."
+
     async def generate_therapy_response(
         self,
         user_message: str,
@@ -306,9 +427,13 @@ Write a 3-4 stanza poem that poetically describes this day.""",
     ) -> Optional[str]:
         """Generate an empathetic therapy response based on user's message and timeline context"""
         try:
+            # Check if it's a simple greeting or short message
+            simple_greetings = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "how are you", "what's up"]
+            is_simple_message = user_message.lower().strip() in simple_greetings or len(user_message.strip()) < 20
+
             # Prepare timeline context summary
             timeline_summary = ""
-            if timeline_context:
+            if timeline_context and not is_simple_message:
                 recent_entries = []
                 for entry in timeline_context[:5]:  # Focus on 5 most recent entries
                     date = entry.get("date", "Unknown date")
@@ -330,8 +455,26 @@ Write a 3-4 stanza poem that poetically describes this day.""",
                         f"\n\nNote: {username} hasn't shared many recent entries yet."
                     )
 
-            # Create therapy prompt
-            therapy_prompt = f"""You are an excellent, warm, and empathetic AI therapist specializing in human behavior and mental wellness. You are having a conversation with {username}, who has shared a message with you.
+            # Create therapy prompt based on message complexity
+            if is_simple_message:
+                therapy_prompt = f"""You are a warm and friendly AI companion. {username} has just said "{user_message}".
+
+Respond in a simple, friendly, and human-like way:
+- Keep it short and conversational (1-2 sentences max)
+- Be warm and welcoming
+- Don't be overly therapeutic or formal
+- Match their energy and tone
+- If it's a greeting, greet them back warmly
+- If they ask how you are, respond naturally
+
+Examples:
+- "Hi there! 👋 How are you doing today?"
+- "Hello! It's great to see you. How's your day going?"
+- "Hey! I'm doing well, thanks for asking. How about you?"
+
+Remember: Keep it simple, friendly, and human-like."""
+            else:
+                therapy_prompt = f"""You are an excellent, warm, and empathetic AI therapist specializing in human behavior and mental wellness. You are having a conversation with {username}, who has shared a message with you.
 
 Your role:
 - Provide compassionate, personalized support based on their journal history
@@ -351,7 +494,7 @@ Guidelines for your response:
 4. Provide gentle, actionable suggestions if helpful
 5. Be encouraging and highlight their strengths
 6. Ask thoughtful follow-up questions to help them explore deeper
-7. Keep responses warm but professional (300-500 words max)
+7. Keep responses warm but professional (150-300 words max)
 8. If they're struggling, offer specific coping strategies
 9. Celebrate their progress and growth when evident
 10. Always end with support and openness for continued conversation
@@ -359,7 +502,7 @@ Guidelines for your response:
 Remember: This is a real person sharing their inner world. Respond with genuine care, wisdom, and hope."""
 
             print(
-                f"Generating therapy response for {username}, message type: {message_type}"
+                f"Generating therapy response for {username}, message type: {message_type}, simple: {is_simple_message}"
             )
 
             response = client.chat.completions.create(
@@ -371,7 +514,7 @@ Remember: This is a real person sharing their inner world. Respond with genuine 
                     },
                     {"role": "user", "content": therapy_prompt},
                 ],
-                max_tokens=600,
+                max_tokens=300 if is_simple_message else 400,
                 temperature=0.7,
             )
 
