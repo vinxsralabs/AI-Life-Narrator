@@ -7,9 +7,9 @@ import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card';
 import { Skeleton } from '../components/ui/Skeleton';
 import ConfirmationModal from '../components/ui/ConfirmationModal';
-import TodoWidget from '../components/TodoWidget';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { formatDateTime } from '../utils/timezone';
 
 interface Entry {
   id: number;
@@ -155,9 +155,9 @@ const Dashboard: React.FC = () => {
         <StatCard icon={<BarChart2 size={24} />} label="Weekly Streak" value={stats.weeklyStreak} isLoading={loading} />
       </motion.div>
 
-      <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Entries - Takes 2 columns */}
-        <div className="lg:col-span-2">
+      <motion.div variants={itemVariants} className="grid grid-cols-1 gap-6">
+        {/* Recent Entries */}
+        <div>
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-semibold">Recent Entries</h2>
             <Link to="/upload">
@@ -193,20 +193,15 @@ const Dashboard: React.FC = () => {
                       <div className="flex-1">
                         <CardTitle className="flex justify-between items-center">
                           <span className="text-sm font-medium text-night-text">
-                            {entry.date ? (() => {
-                              try {
-                                return new Date(entry.date).toLocaleString(undefined, {
-                                  weekday: 'short',
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                });
-                              } catch (error) {
-                                return entry.date;
-                              }
-                            })() : 'No date'}
+                            {entry.date ? formatDateTime(entry.date, {
+                              weekday: 'short',
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              timeZoneName: undefined
+                            }) : 'No date'}
                           </span>
                           {entry.ai_generated_story && <Star size={16} className="text-yellow-400" />}
                         </CardTitle>
@@ -245,11 +240,6 @@ const Dashboard: React.FC = () => {
             </CardContent>
           </Card>
         )}
-        </div>
-        
-        {/* Todo Widget - Takes 1 column */}
-        <div className="lg:col-span-1">
-          <TodoWidget />
         </div>
       </motion.div>
       

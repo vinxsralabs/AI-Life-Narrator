@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_serializer
 from typing import Optional, List
 from datetime import datetime
+from timezone_utils import to_user_timezone
 
 
 # User models
@@ -54,6 +55,18 @@ class Entry(EntryBase):
     ai_generated_story: Optional[str] = None
     created_at: datetime
 
+    @field_serializer('date')
+    def serialize_date(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
+
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
+
     class Config:
         from_attributes = True
 
@@ -75,6 +88,12 @@ class AudioFile(AudioFileBase):
     filename: str
     file_path: str
     created_at: datetime
+
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
 
     class Config:
         from_attributes = True
@@ -98,6 +117,12 @@ class Image(ImageBase):
     ai_generated_illustration: Optional[str] = None
     created_at: datetime
 
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
+
     class Config:
         from_attributes = True
 
@@ -109,6 +134,12 @@ class TimelineEntry(BaseModel):
     audio_files: List[AudioFile] = []
     images: List[Image] = []
     has_content: bool = False
+
+    @field_serializer('date')
+    def serialize_date(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
 
 
 class TimelineResponse(BaseModel):
@@ -183,6 +214,24 @@ class NarrativeHistory(BaseModel):
     image_url: Optional[str] = None
     created_at: datetime
 
+    @field_serializer('start_date')
+    def serialize_start_date(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
+
+    @field_serializer('end_date')
+    def serialize_end_date(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
+
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
+
     class Config:
         from_attributes = True
 
@@ -202,6 +251,12 @@ class TherapyChatResponse(BaseModel):
     response: str
     timestamp: datetime
 
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
+
 
 # Mood tracking models
 class MoodEntryBase(BaseModel):
@@ -219,6 +274,18 @@ class MoodEntry(MoodEntryBase):
     id: int
     user_id: int
     created_at: datetime
+
+    @field_serializer('date')
+    def serialize_date(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
+
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
 
     class Config:
         from_attributes = True
@@ -242,6 +309,12 @@ class Highlight(HighlightBase):
     user_id: int
     created_at: datetime
 
+    @field_serializer('created_at')
+    def serialize_created_at(self, value: datetime) -> str:
+        """Convert UTC datetime to user timezone for display"""
+        user_dt = to_user_timezone(value)
+        return user_dt.isoformat()
+
     class Config:
         from_attributes = True
 
@@ -261,50 +334,4 @@ class HighlightsResponse(BaseModel):
     mood_insights: Optional[str]
 
 
-# Todo models
-class TodoBase(BaseModel):
-    title: str
-    description: Optional[str] = None
-    due_date: Optional[datetime] = None
-    priority: str = "medium"  # "low", "medium", "high"
-    status: str = "active"  # "active", "completed", "archived"
 
-
-class TodoCreate(TodoBase):
-    pass
-
-
-class TodoUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    due_date: Optional[datetime] = None
-    priority: Optional[str] = None
-    status: Optional[str] = None
-
-
-class Todo(TodoBase):
-    id: int
-    user_id: int
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Todo API Response models
-class TodoListResponse(BaseModel):
-    todos: List[Todo]
-    total_count: int
-    active_count: int
-    completed_count: int
-    overdue_count: int
-
-
-class TodoStatsResponse(BaseModel):
-    total_todos: int
-    completed_todos: int
-    active_todos: int
-    overdue_todos: int
-    completion_rate: float
-    productivity_trend: str  # "improving", "declining", "stable"

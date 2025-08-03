@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from timezone_utils import now_utc
 
 load_dotenv()
 
@@ -43,7 +44,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
 
     # Relationships
     entries = relationship("Entry", back_populates="user")
@@ -52,7 +53,6 @@ class User(Base):
     narratives = relationship("Narrative", back_populates="user")
     mood_entries = relationship("MoodEntry", back_populates="user")
     highlights = relationship("Highlight", back_populates="user")
-    todos = relationship("TodoDB", back_populates="user")
 
 
 class Entry(Base):
@@ -60,11 +60,11 @@ class Entry(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    date = Column(DateTime, default=datetime.utcnow)
+    date = Column(DateTime, default=now_utc)
     text_content = Column(Text)
     ai_generated_story = Column(Text)
     story_style = Column(String, default="story")  # story, comic, poetic
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
 
     # Relationships
     user = relationship("User", back_populates="entries")
@@ -82,7 +82,7 @@ class AudioFile(Base):
     file_path = Column(String)
     transcription = Column(Text)
     duration = Column(Integer)  # in seconds
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
 
     # Relationships
     user = relationship("User", back_populates="audio_files")
@@ -99,7 +99,7 @@ class Image(Base):
     file_path = Column(String)
     description = Column(Text)
     ai_generated_illustration = Column(Text)  # URL or path to generated image
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
 
     # Relationships
     user = relationship("User", back_populates="images")
@@ -116,7 +116,7 @@ class Narrative(Base):
     narrative_text = Column(Text)
     audio_url = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
 
     # Relationships
     user = relationship("User", back_populates="narratives")
@@ -131,7 +131,7 @@ class MoodEntry(Base):
     mood_emoji = Column(String, nullable=False)
     mood_note = Column(Text, nullable=True)
     date = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
 
     # Relationships
     user = relationship("User", back_populates="mood_entries")
@@ -147,28 +147,14 @@ class Highlight(Base):
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     is_favorite = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
 
     # Relationships
     user = relationship("User", back_populates="highlights")
     entry = relationship("Entry", backref="highlights")
 
 
-class TodoDB(Base):
-    __tablename__ = "todos"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    title = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-    due_date = Column(DateTime, nullable=True)
-    priority = Column(String, default="medium")  # "low", "medium", "high"
-    status = Column(String, default="active")  # "active", "completed", "archived"
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    user = relationship("User", back_populates="todos")
 
 
 # Database dependency

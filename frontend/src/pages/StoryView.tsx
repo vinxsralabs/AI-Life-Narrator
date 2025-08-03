@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { ArrowLeft, RefreshCw, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { formatDateTime } from '../utils/timezone';
 
 interface Story {
   id: number;
@@ -62,20 +63,15 @@ const StoryView: React.FC = () => {
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle className="text-3xl text-night-text">
-              {story.date ? (() => {
-                try {
-                  return new Date(story.date).toLocaleString(undefined, {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  });
-                } catch (error) {
-                  return story.date;
-                }
-              })() : 'No date'}
+              {story.date ? formatDateTime(story.date, {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZoneName: undefined
+              }) : 'No date'}
             </CardTitle>
             <Button onClick={handleRegenerate} loading={isRegenerating}>
               <RefreshCw className={`mr-2 ${isRegenerating ? 'animate-spin' : ''}`} />

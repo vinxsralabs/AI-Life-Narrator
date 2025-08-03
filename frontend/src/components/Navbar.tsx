@@ -15,7 +15,6 @@ import {
   PlusCircle,
   Heart,
   Sparkles,
-  CheckSquare,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -33,7 +32,6 @@ const Navbar: React.FC = () => {
     { path: '/upload', label: 'Create', icon: PlusCircle },
     { path: '/narrate', label: 'Narrate', icon: Mic },
     { path: '/my-reflections', label: 'My Reflections', icon: Sparkles },
-    { path: '/todos', label: 'Todo List', icon: CheckSquare },
     { path: '/therapy', label: 'Talk2Me', icon: Heart },
   ];
 

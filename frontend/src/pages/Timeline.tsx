@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import ConfirmationModal from '../components/ui/ConfirmationModal';
+import { formatDateTime } from '../utils/timezone';
 
 interface TimelineEntry {
   date: string;
@@ -109,20 +110,15 @@ const Timeline: React.FC = () => {
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg font-semibold text-night-text">
-                        {day.date ? (() => {
-                          try {
-                            return new Date(day.date).toLocaleString(undefined, {
-                              weekday: 'long',
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            });
-                          } catch (error) {
-                            return day.date;
-                          }
-                        })() : 'No date'}
+                        {day.date ? formatDateTime(day.date, {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          timeZoneName: undefined
+                        }) : 'No date'}
                       </CardTitle>
                       {day.entry && (
                         <Button

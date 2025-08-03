@@ -73,7 +73,7 @@ if os.path.exists(upload_dir):
     app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
 
-# Serve specific file types
+# Serve specific  file types
 @app.get("/uploads/audio/{filename}")
 async def serve_audio(filename: str):
     file_path = os.path.join(upload_dir, "audio", filename)

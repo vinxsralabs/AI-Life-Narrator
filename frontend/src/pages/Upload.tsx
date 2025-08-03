@@ -11,15 +11,14 @@ import { motion } from 'framer-motion';
 const Upload: React.FC = () => {
   const navigate = useNavigate();
   const [textContent, setTextContent] = useState('');
-  const [storyStyle, setStoryStyle] = useState('story');
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [images, setImages] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [transcription, setTranscription] = useState('');
-  const [showTranscription, setShowTranscription] = useState(false);
   const [entryId, setEntryId] = useState<number | null>(null);
   const [liveTranscription, setLiveTranscription] = useState('');
   const [speechRecognition, setSpeechRecognition] = useState<any>(null);
+  const [isRecognitionActive, setIsRecognitionActive] = useState(false);
+  const [accumulatedText, setAccumulatedText] = useState('');
   
   // Audio recording states
   const [isRecording, setIsRecording] = useState(false);
@@ -60,7 +59,7 @@ const Upload: React.FC = () => {
         let finalTranscript = '';
         let interimTranscript = '';
 
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        for (let i = 0; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
             finalTranscript += transcript + ' ';
@@ -69,13 +68,10 @@ const Upload: React.FC = () => {
           }
         }
 
-        const currentTranscription = (liveTranscription + finalTranscript + interimTranscript).trim();
-        setLiveTranscription(currentTranscription);
-        
-        // Update the text content in real-time
-        if (currentTranscription) {
-          setTextContent(currentTranscription);
-        }
+        // Always reconstruct the full text from scratch
+        const fullText = finalTranscript + ' ' + interimTranscript;
+        setTextContent(fullText);
+        setAccumulatedText(finalTranscript);
       };
 
       recognition.onerror = (event: any) => {
@@ -86,9 +82,14 @@ const Upload: React.FC = () => {
         }
       };
 
+      recognition.onend = () => {
+        // No need to clean text here - let user edit naturally
+        setIsRecognitionActive(false);
+      };
+
       setSpeechRecognition(recognition);
     }
-  }, [liveTranscription]);
+  }, []);
 
   // Audio recording functions
   const startRecording = async () => {
@@ -118,13 +119,17 @@ const Upload: React.FC = () => {
       setIsRecording(true);
       setRecordingTime(0);
       setLiveTranscription('');
+      setTextContent(''); // Clear text content when starting new recording
+      setAccumulatedText(''); // Clear accumulated text when starting new recording
       
       // Start speech recognition for live transcription
-      if (speechRecognition) {
+      if (speechRecognition && !isRecognitionActive) {
         try {
+          setIsRecognitionActive(true);
           speechRecognition.start();
         } catch (error) {
           console.warn('Speech recognition failed to start:', error);
+          setIsRecognitionActive(false);
         }
       }
       
@@ -155,8 +160,9 @@ const Upload: React.FC = () => {
       }
       
       // Stop speech recognition
-      if (speechRecognition) {
+      if (speechRecognition && isRecognitionActive) {
         speechRecognition.stop();
+        setIsRecognitionActive(false);
       }
       
       toast.success('Recording stopped!');
@@ -183,14 +189,15 @@ const Upload: React.FC = () => {
     setAudioUrl(null);
     setRecordingTime(0);
     setIsPlaying(false);
-    setTranscription('');
-    setShowTranscription(false);
     setLiveTranscription('');
+    setTextContent(''); // Clear text content when resetting
+    setAccumulatedText(''); // Clear accumulated text when resetting
     setEntryId(null);
     
     // Stop speech recognition if active
-    if (speechRecognition) {
+    if (speechRecognition && isRecognitionActive) {
       speechRecognition.stop();
+      setIsRecognitionActive(false);
     }
     
     if (audioRef.current) {
@@ -199,43 +206,7 @@ const Upload: React.FC = () => {
     }
   };
 
-  const handleAudioUpload = async () => {
-    if (!audioBlob) return;
-    
-    setIsSubmitting(true);
-    const toastId = toast.loading('Transcribing your audio...');
 
-    try {
-      const audioFormData = new FormData();
-      audioFormData.append('file', audioBlob, 'recording.webm');
-      
-      const response = await axios.post('/api/upload/audio', audioFormData, {
-        params: {
-          story_style: storyStyle
-        }
-      });
-
-      setTranscription(response.data.transcription || '');
-      setShowTranscription(true);
-      setTextContent(response.data.transcription || '');
-      
-      // Extract entry ID from the response if available
-      if (response.data.file_id) {
-        // Get the entry ID from the audio file
-        const audioResponse = await axios.get(`/api/audio/${response.data.file_id}`);
-        if (audioResponse.data.entry_id) {
-          setEntryId(audioResponse.data.entry_id);
-        }
-      }
-
-      toast.success('Audio transcribed successfully!', { id: toastId });
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.detail || 'Failed to transcribe audio. Please try again.';
-      toast.error(errorMessage, { id: toastId });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -256,7 +227,8 @@ const Upload: React.FC = () => {
   }, [audioUrl]);
 
   const handleSubmit = async () => {
-    if (!textContent && images.length === 0 && !audioBlob) {
+    const finalTextContent = cleanText(textContent);
+    if (!finalTextContent && images.length === 0 && !audioBlob) {
       toast.error("Please add some content before creating an entry.");
       return;
     }
@@ -274,7 +246,7 @@ const Upload: React.FC = () => {
         
         const audioResponse = await axios.post('/api/upload/audio', audioFormData, {
           params: {
-            story_style: storyStyle,
+            story_style: 'story',
             create_entry: true
           }
         });
@@ -286,18 +258,18 @@ const Upload: React.FC = () => {
           if (audioFileResponse.data.entry_id) {
             finalEntryId = audioFileResponse.data.entry_id;
             // Update the entry text
-            await axios.put(`/api/entries/${finalEntryId}/text`, null, { params: { text_content: textContent } });
+            await axios.put(`/api/entries/${finalEntryId}/text`, null, { params: { text_content: finalTextContent } });
           }
         }
       } else if (entryId) {
         // Update existing entry text
-        await axios.put(`/api/entries/${entryId}/text`, null, { params: { text_content: textContent } });
+        await axios.put(`/api/entries/${entryId}/text`, null, { params: { text_content: finalTextContent } });
         finalEntryId = entryId;
       } else {
         // Create new entry without audio
         const entryResponse = await axios.post('/api/entries', {
-          text_content: textContent,
-          story_style: storyStyle,
+          text_content: finalTextContent,
+          story_style: 'story',
         });
         finalEntryId = entryResponse.data.id;
       }
@@ -329,6 +301,15 @@ const Upload: React.FC = () => {
   
   const MAX_CHARS = 500;
 
+  // Function to clean up text and remove extra spaces
+  const cleanText = (text: string) => {
+    return text
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .replace(/\s+$/g, '') // Remove trailing spaces
+      .replace(/^\s+/g, '') // Remove leading spaces
+      .trim();
+  };
+
   return (
     <motion.div 
       className="container mx-auto px-4 py-8 pt-24"
@@ -340,8 +321,7 @@ const Upload: React.FC = () => {
         <p className="text-lg text-night-text-secondary">Combine your thoughts, voice, and snapshots into a beautiful story.</p>
       </div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left Column */}
+      <div className="max-w-4xl mx-auto">
         <div className="space-y-6">
           <Card variant="elevated">
             <CardContent>
@@ -359,165 +339,88 @@ const Upload: React.FC = () => {
                   value={textContent}
                   onChange={(e) => setTextContent(e.target.value)}
                   className="w-full h-48 p-3 bg-night-surface rounded-md focus:ring-2 focus:ring-night-accent transition-shadow"
-                  placeholder={isRecording ? "Speaking... (live transcription active)" : "What happened today? How are you feeling? Start recording for live transcription!"}
+                  placeholder={isRecording ? "Speaking... (your words will appear here automatically)" : "What happened today? How are you feeling? Start recording for live transcription!"}
                   maxLength={MAX_CHARS}
                 />
                 <p className="absolute bottom-2 right-2 text-xs text-night-text-secondary">
                   {textContent.length} / {MAX_CHARS}
                 </p>
               </div>
-                         </CardContent>
-           </Card>
-
-          {showTranscription && (
-            <Card variant="elevated">
-              <CardContent>
-                <h2 className="text-lg font-medium mb-2 flex items-center">
-                  <FileText className="inline-block mr-2" /> Transcription
-                </h2>
-                <div className="bg-night-surface p-3 rounded-md">
-                  <p className="text-night-text-secondary text-sm mb-2">Audio transcription:</p>
-                  <p className="text-night-text">{transcription}</p>
+              
+              {/* Add Photos and Record Audio Icons */}
+              <div className="mt-4 flex items-center justify-center gap-8">
+                {/* Add Photos */}
+                <div {...getRootProps()} className="flex items-center gap-2 text-night-accent hover:text-night-accent/80 cursor-pointer transition-colors">
+                  <input {...getInputProps()} />
+                  <Camera size={20} />
+                  <span className="text-sm font-medium">Add Photos</span>
                 </div>
-                <p className="text-xs text-night-text-secondary mt-2">
-                  You can edit this text in the "Your Thoughts" section above.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card variant="elevated">
-            <CardContent>
-              <label htmlFor="story-style" className="flex items-center text-lg font-medium mb-2">
-                <Sparkles className="inline-block mr-2" /> AI Narrative Style
-              </label>
-              <select
-                id="story-style"
-                value={storyStyle}
-                onChange={(e) => setStoryStyle(e.target.value)}
-                className="w-full p-3 bg-night-surface rounded-md focus:ring-2 focus:ring-night-accent"
-              >
-                <option value="story">Classic Narrative</option>
-                <option value="comic">Comic Book</option>
-                <option value="poetic">Poetic Verse</option>
-              </select>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column */}
-        <div className="space-y-6">
-           <Card variant="elevated">
-             <CardContent>
-                <h2 className="text-lg font-medium mb-2 flex items-center"><Mic className="inline-block mr-2" /> Record Audio</h2>
                 
-                {!audioBlob ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-center h-24 bg-night-surface rounded-md">
-                      {isRecording ? (
-                        <div className="text-center">
-                          <div className="flex items-center justify-center mb-2">
-                            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></div>
-                            <span className="text-red-500 font-medium">Recording...</span>
-                          </div>
-                          <p className="text-sm text-night-text-secondary">{formatTime(recordingTime)}</p>
-                        </div>
-                      ) : (
-                        <p className="text-night-text-secondary">Click the microphone to start recording</p>
-                      )}
+                {/* Record Audio */}
+                <div className="flex items-center gap-4">
+                  {!isRecording ? (
+                    <Button 
+                      onClick={startRecording}
+                      variant="ghost"
+                      size="sm"
+                      className="flex items-center gap-2 text-night-accent hover:text-night-accent/80"
+                    >
+                      <Mic size={20} />
+                      <span className="text-sm font-medium">Record Audio</span>
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                      <Button 
+                        onClick={stopRecording}
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center gap-2 text-red-500 hover:text-red-600"
+                      >
+                        <Square size={20} />
+                        <span className="text-sm font-medium">Stop Recording ({formatTime(recordingTime)})</span>
+                      </Button>
                     </div>
-                    
-                    <div className="flex justify-center space-x-4">
-                      {!isRecording ? (
-                        <Button 
-                          onClick={startRecording}
-                          variant="outline"
-                          className="flex items-center"
-                        >
-                          <Mic size={16} className="mr-2" />
-                          Start Recording
-                        </Button>
-                      ) : (
-                        <Button 
-                          onClick={stopRecording}
-                          variant="outline"
-                          className="flex items-center bg-red-500 hover:bg-red-600"
-                        >
-                          <Square size={16} className="mr-2" />
-                          Stop Recording
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-center h-24 bg-night-surface rounded-md">
-                      <audio 
-                        ref={audioRef}
-                        src={audioUrl || undefined}
-                        onEnded={() => setIsPlaying(false)}
-                        className="w-full"
-                      />
-                      <div className="text-center">
-                        <p className="text-sm text-night-text-secondary mb-2">Recording saved!</p>
-                        <p className="text-xs text-night-text-secondary">Duration: {formatTime(recordingTime)}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex justify-center space-x-4">
+                  )}
+                  
+                  {audioBlob && (
+                    <div className="flex items-center gap-2">
                       {!isPlaying ? (
                         <Button 
                           onClick={playRecording}
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
-                          className="flex items-center"
+                          className="flex items-center gap-2 text-green-500 hover:text-green-600"
                         >
-                          <Play size={16} className="mr-2" />
-                          Play
+                          <Play size={16} />
+                          <span className="text-xs">Play</span>
                         </Button>
                       ) : (
                         <Button 
                           onClick={stopPlaying}
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
-                          className="flex items-center"
+                          className="flex items-center gap-2 text-green-500 hover:text-green-600"
                         >
-                          <Square size={16} className="mr-2" />
-                          Stop
+                          <Square size={16} />
+                          <span className="text-xs">Stop</span>
                         </Button>
                       )}
                       <Button 
-                        onClick={handleAudioUpload}
-                        loading={isSubmitting}
-                        variant="outline"
-                        size="sm"
-                        className="flex items-center"
-                      >
-                        <FileText size={16} className="mr-2" />
-                        Transcribe
-                      </Button>
-                      <Button 
                         onClick={resetRecording}
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        className="flex items-center"
+                        className="flex items-center gap-2 text-gray-500 hover:text-gray-600"
                       >
-                        <RotateCcw size={16} className="mr-2" />
-                        Re-record
+                        <RotateCcw size={16} />
+                        <span className="text-xs">Re-record</span>
                       </Button>
                     </div>
-                  </div>
-                )}
-             </CardContent>
-           </Card>
-          <Card variant="elevated">
-            <CardContent>
-              <h2 className="text-lg font-medium mb-2 flex items-center"><Camera className="inline-block mr-2" /> Add Photos</h2>
-              <div {...getRootProps()} className={`border-2 border-dashed border-night-border p-8 text-center rounded-md cursor-pointer transition-colors ${isDragActive ? 'bg-night-accent/20 border-night-accent' : ''}`}>
-                <input {...getInputProps()} />
-                <UploadIcon className="mx-auto mb-2 text-night-text-secondary" />
-                <p className="text-night-text-secondary">{isDragActive ? "Drop the files here..." : "Drag 'n' drop up to 5 images, or click"}</p>
+                  )}
+                </div>
               </div>
+              
+              {/* Image Preview */}
               {images.length > 0 && (
                 <div className="mt-4 grid grid-cols-3 sm:grid-cols-5 gap-4">
                   {images.map((file, i) => (
@@ -532,7 +435,13 @@ const Upload: React.FC = () => {
               )}
             </CardContent>
           </Card>
+
+
+
+
         </div>
+
+        
       </div>
       
       <div className="mt-8 text-center">

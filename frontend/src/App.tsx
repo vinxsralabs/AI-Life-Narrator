@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from './contexts/AuthContext';
@@ -12,10 +12,10 @@ import StoryView from './pages/StoryView';
 import Upload from './pages/Upload';
 import Narrate from './pages/Narrate';
 import MyReflections from './pages/MyReflections';
-import TodoList from './pages/TodoList';
 import Therapy from './pages/Therapy';
 import LoadingSpinner from './components/LoadingSpinner';
 import AnimatedBackground from './components/ui/AnimatedBackground';
+import { syncUserTimezone } from './utils/timezone';
 
 // Protected route component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -59,6 +59,14 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const App: React.FC = () => {
   const { theme } = useTheme();
+  const { user } = useAuth();
+
+  // Sync user's timezone with backend when user is logged in
+  useEffect(() => {
+    if (user) {
+      syncUserTimezone();
+    }
+  }, [user]);
 
   return (
     <div className={`app ${theme} min-h-screen bg-night-bg`}>
@@ -193,22 +201,7 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/todos"
-            element={
-              <ProtectedRoute>
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.4, ease: "easeInOut" }}
-                >
-                  <Navbar />
-                  <TodoList />
-                </motion.div>
-              </ProtectedRoute>
-            }
-          />
+
           <Route
             path="/therapy"
             element={

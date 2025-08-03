@@ -5,6 +5,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
+import { formatDateTime } from '../utils/timezone';
 
 interface TimelineEntry {
   date: string;
@@ -702,19 +703,14 @@ const Narrate: React.FC = () => {
                           })()}
                         </h3>
                         <p className="text-sm text-night-text-secondary">
-                          {narrative.created_at ? (() => {
-                            try {
-                              return new Date(narrative.created_at).toLocaleString(undefined, {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              });
-                            } catch (error) {
-                              return narrative.created_at;
-                            }
-                          })() : 'No creation date'}
+                          {narrative.created_at ? formatDateTime(narrative.created_at, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            timeZoneName: undefined
+                          }) : 'No creation date'}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">

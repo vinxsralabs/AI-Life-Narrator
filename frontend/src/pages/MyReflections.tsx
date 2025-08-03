@@ -27,6 +27,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { formatDate } from '../utils/timezone';
 
 interface MoodEntry {
   date: string;
@@ -171,12 +172,13 @@ const MyReflections: React.FC = () => {
     }
   };
 
-  const formatDate = (dateStr: string) => {
+  const formatDateDisplay = (dateStr: string) => {
     try {
-      return new Date(dateStr).toLocaleDateString(undefined, {
+      return formatDate(dateStr, {
         weekday: 'short',
         month: 'short', 
-        day: 'numeric'
+        day: 'numeric',
+        timeZoneName: undefined
       });
     } catch {
       return dateStr;
@@ -311,10 +313,10 @@ const MyReflections: React.FC = () => {
                       <p className="text-night-text-secondary leading-relaxed">
                         {memory.ai_story || memory.content}
                       </p>
-                      <div className="flex items-center gap-2 mt-3 text-xs text-night-text-secondary">
-                        <Calendar size={12} />
-                        {formatDate(memory.date)}
-                      </div>
+                                              <div className="flex items-center gap-2 mt-3 text-xs text-night-text-secondary">
+                          <Calendar size={12} />
+                          {formatDateDisplay(memory.date)}
+                        </div>
                     </motion.div>
                   ))}
                 </CardContent>
@@ -348,7 +350,7 @@ const MyReflections: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <BookOpen className="text-night-accent" size={16} />
                           <span className="text-xs text-night-text-secondary">
-                            {formatDate(highlight.date)}
+                            {formatDateDisplay(highlight.date)}
                           </span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -593,7 +595,7 @@ const MyReflections: React.FC = () => {
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-1">
                             <span className="text-sm font-medium text-night-text">
-                              {formatDate(entry.date)}
+                              {formatDateDisplay(entry.date)}
                             </span>
                             <span className={`text-sm font-medium ${moodColors[entry.mood_value]}`}>
                               {moodLabels[entry.mood_value]}
