@@ -297,13 +297,16 @@ async def delete_entry(
 @router.post("/upload/audio", response_model=UploadResponse)
 async def upload_audio(
     file: UploadFile = File(...),
-    entry_id: Optional[int] = None,
+    entry_id: Optional[int] = Query(None),  # Extract from query parameters
     create_entry: bool = False,
     story_style: str = "story",
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Upload and transcribe audio file"""
+    
+    # Debug output - remove this later
+    print(f"Audio upload - entry_id: {entry_id}, user_id: {current_user.id}")
 
     # Validate file type
     if not file.content_type.startswith("audio/"):
@@ -357,7 +360,7 @@ async def upload_audio(
     audio_file = AudioFile(
         user_id=current_user.id,
         entry_id=entry_id,
-        filename=file.filename,
+        filename=unique_filename,  # Store the unique filename, not the original
         file_path=file_path,
         transcription=transcription,
         duration=0,  # Could be calculated from audio file
@@ -407,11 +410,14 @@ async def update_entry_text(
 async def upload_image(
     files: List[UploadFile] = File(...),
     description: Optional[str] = Form(None),
-    entry_id: Optional[int] = None,
+    entry_id: Optional[int] = Query(None),  # Extract from query parameters
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Upload multiple image files"""
+    
+    # Debug output - remove this later
+    print(f"Image upload - entry_id: {entry_id}, user_id: {current_user.id}")
 
     image_ids = []
     for file in files:
@@ -442,7 +448,7 @@ async def upload_image(
         image = Image(
             user_id=current_user.id,
             entry_id=entry_id,
-            filename=file.filename,
+            filename=unique_filename,  # Store the unique filename, not the original
             file_path=file_path,
             description=description,
         )
@@ -612,12 +618,17 @@ async def get_timeline(
 
     # Group by date
     timeline_entries = []
+    
+    # Add entries with ONLY their directly associated audio and images
     for entry in entries:
-        entry_date = entry.date.date()
-
-        # Get audio and images for this date
-        day_audio = [af for af in audio_files if af.created_at.date() == entry_date]
-        day_images = [img for img in images if img.created_at.date() == entry_date]
+        # Get audio and images specifically associated with this entry by entry_id
+        day_audio = [af for af in audio_files if af.entry_id == entry.id]
+        day_images = [img for img in images if img.entry_id == entry.id]
+        
+        # Debug output - remove this later
+        print(f"Entry {entry.id} ({entry.date}): {len(day_images)} images, {len(day_audio)} audio files")
+        for img in day_images:
+            print(f"  - Image {img.id}: {img.filename} (entry_id: {img.entry_id})")
 
         timeline_entries.append(
             {
@@ -628,6 +639,31 @@ async def get_timeline(
                 "has_content": True,
             }
         )
+    
+    # Add standalone audio files that don't have entries (entry_id is null)
+    for audio in audio_files:
+        if audio.entry_id is None:  # Only add truly standalone audio
+            timeline_entries.append({
+                "date": audio.created_at,
+                "entry": None,
+                "audio_files": [audio],
+                "images": [],
+                "has_content": True,
+            })
+    
+    # Add standalone images that don't have entries (entry_id is null)
+    for image in images:
+        if image.entry_id is None:  # Only add truly standalone images
+            timeline_entries.append({
+                "date": image.created_at,
+                "entry": None,
+                "audio_files": [],
+                "images": [image],
+                "has_content": True,
+            })
+    
+    # Sort all entries by date (newest first)
+    timeline_entries.sort(key=lambda x: x["date"], reverse=True)
 
     return TimelineResponse(
         entries=timeline_entries, total_entries=len(timeline_entries)
@@ -1355,3 +1391,62 @@ async def query_narratives(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process query: {str(e)}",
         )
+
+# Debug endpoint - remove this later
+@router.get("/debug/images")
+async def debug_images(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Debug endpoint to see all images for current user"""
+    images = db.query(Image).filter(Image.user_id == current_user.id).all()
+    return {
+        "images": [
+            {
+                "id": img.id,
+                "filename": img.filename,
+                "entry_id": img.entry_id,
+                "created_at": img.created_at,
+                "description": img.description
+            }
+            for img in images
+        ]
+    }
+
+# Fix existing images - remove this later
+@router.post("/fix/images")
+async def fix_existing_images(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Fix existing images by associating them with entries based on date matching"""
+    try:
+        # Get all images for current user that don't have entry_id
+        orphaned_images = db.query(Image).filter(
+            Image.user_id == current_user.id,
+            Image.entry_id.is_(None)
+        ).all()
+        
+        fixed_count = 0
+        for image in orphaned_images:
+            # Find an entry created on the same date
+            entry = db.query(Entry).filter(
+                Entry.user_id == current_user.id,
+                Entry.date >= image.created_at.replace(hour=0, minute=0, second=0),
+                Entry.date <= image.created_at.replace(hour=23, minute=59, second=59)
+            ).first()
+            
+            if entry:
+                image.entry_id = entry.id
+                fixed_count += 1
+        
+        db.commit()
+        
+        return {
+            "message": f"Fixed {fixed_count} out of {len(orphaned_images)} orphaned images",
+            "fixed_count": fixed_count,
+            "total_orphaned": len(orphaned_images)
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to fix images: {str(e)}")

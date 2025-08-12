@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+
 import { motion } from 'framer-motion';
-import { BookOpen, Star, FileText, BarChart2, Trash2, Mic, Camera, Check, Play, Square, RotateCcw, X, Search } from 'lucide-react';
+import { BookOpen, Star, FileText, Trash2, Mic, Camera, Check, Play, Square, RotateCcw, X, Search } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card';
+import { Card, CardContent } from '../components/ui/Card';
 import { Skeleton } from '../components/ui/Skeleton';
 import ConfirmationModal from '../components/ui/ConfirmationModal';
 import axios from 'axios';
@@ -18,6 +18,17 @@ interface Entry {
   text_content: string;
   ai_generated_story: string;
   story_style: string;
+}
+
+interface EnhancedEntry extends Omit<Entry, 'id'> {
+  id: number | string;
+  hasImages?: boolean;
+  hasAudio?: boolean;
+  imageCount?: number;
+  audioCount?: number;
+  images?: any[]; // Array of image objects with filename, description, etc.
+  audioFiles?: any[]; // Array of audio file objects
+  isMediaOnly?: boolean;
 }
 
 const StatCard = ({ icon, label, value, isLoading }: { icon: React.ReactNode, label: string, value: string | number, isLoading: boolean }) => (
@@ -36,13 +47,13 @@ const StatCard = ({ icon, label, value, isLoading }: { icon: React.ReactNode, la
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const [recentEntries, setRecentEntries] = useState<Entry[]>([]);
+
+  const [recentEntries, setRecentEntries] = useState<EnhancedEntry[]>([]);
   const [stats, setStats] = useState({ totalEntries: 0, storiesGenerated: 0, weeklyStreak: 0, memSearchQuestions: 0 });
   const [loading, setLoading] = useState(true);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
-    entryId: number | null;
+    entryId: number | string | null;
     entryDate: string;
   }>({
     isOpen: false,
@@ -50,6 +61,7 @@ const Dashboard: React.FC = () => {
     entryDate: ''
   });
   const [deleting, setDeleting] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
 
   // Your thoughts functionality states
   const [textContent, setTextContent] = useState('');
@@ -80,7 +92,7 @@ const Dashboard: React.FC = () => {
     setImages(prev => [...prev, ...acceptedFiles.slice(0, 5 - prev.length)]);
   }, []);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
+  const { getRootProps, getInputProps } = useDropzone({ 
     onDrop, 
     accept: {'image/*':[]},
     maxFiles: 5,
@@ -328,7 +340,7 @@ const Dashboard: React.FC = () => {
         await axios.post(`/api/upload/audio?entry_id=${finalEntryId}`, audioFormData);
       }
       
-      toast.success('Entry created! Taking you to the story...', { id: toastId });
+      toast.success('Post submitted successfully! Your entry has been added to your timeline.', { id: toastId });
       
       // Reset form
       setTextContent('');
@@ -341,10 +353,11 @@ const Dashboard: React.FC = () => {
       setLiveTranscription('');
       setAccumulatedText('');
       
-      // Refresh dashboard data
-      fetchData();
-      
-      navigate(`/story/${finalEntryId}`);
+      // Refresh dashboard data to show the new entry in recent entries
+      // Small delay to ensure user sees the success message
+      setTimeout(() => {
+        fetchData();
+      }, 500);
 
     } catch (error: any) {
       const errorMessage = error.response?.data?.detail || 'Failed to create entry. Please try again.';
@@ -369,12 +382,57 @@ const Dashboard: React.FC = () => {
         }
       }
 
-      const [entriesRes, statsRes] = await Promise.all([
-        axios.get('/api/entries?limit=3'),
-        axios.get('/api/dashboard/stats')
+      const [statsRes, timelineRes] = await Promise.all([
+        axios.get('/api/dashboard/stats'),
+        axios.get('/api/timeline') // Get timeline data which includes entries with images/audio
       ]);
       
-      setRecentEntries(entriesRes.data);
+      // Get entries that have content (text, images, or audio)
+      // First, get entries from timeline that have any content
+      const timelineEntries = timelineRes.data.entries || [];
+      const entriesWithContent = timelineEntries
+        .filter((timelineEntry: any) => {
+          // Include if it has text content, images, or audio files
+          const hasText = timelineEntry.entry && timelineEntry.entry.text_content && timelineEntry.entry.text_content.trim() !== '';
+          const hasImages = timelineEntry.images && timelineEntry.images.length > 0;
+          const hasAudio = timelineEntry.audio_files && timelineEntry.audio_files.length > 0;
+          
+          return hasText || hasImages || hasAudio;
+        })
+        .map((timelineEntry: any) => {
+          // Convert timeline entry format to match what the UI expects
+          if (timelineEntry.entry) {
+            return {
+              ...timelineEntry.entry,
+              hasImages: timelineEntry.images && timelineEntry.images.length > 0,
+              hasAudio: timelineEntry.audio_files && timelineEntry.audio_files.length > 0,
+              imageCount: timelineEntry.images ? timelineEntry.images.length : 0,
+              audioCount: timelineEntry.audio_files ? timelineEntry.audio_files.length : 0,
+              images: timelineEntry.images || [], // Include actual image data
+              audioFiles: timelineEntry.audio_files || [], // Include actual audio data
+              isMediaOnly: false
+            } as EnhancedEntry;
+          } else {
+            // For standalone images/audio without text entries
+            return {
+              id: `media_${timelineEntry.date}`,
+              date: timelineEntry.date,
+              text_content: '',
+              ai_generated_story: '',
+              story_style: 'story',
+              hasImages: timelineEntry.images && timelineEntry.images.length > 0,
+              hasAudio: timelineEntry.audio_files && timelineEntry.audio_files.length > 0,
+              imageCount: timelineEntry.images ? timelineEntry.images.length : 0,
+              audioCount: timelineEntry.audio_files ? timelineEntry.audio_files.length : 0,
+              images: timelineEntry.images || [], // Include actual image data
+              audioFiles: timelineEntry.audio_files || [], // Include actual audio data
+              isMediaOnly: true
+            } as EnhancedEntry;
+          }
+        })
+        .slice(0, 5); // Take only the first 5
+      
+      setRecentEntries(entriesWithContent);
       setStats({ 
         totalEntries: statsRes.data.total_entries, 
         storiesGenerated: statsRes.data.stories_generated,
@@ -439,16 +497,29 @@ const Dashboard: React.FC = () => {
     };
   }, [audioUrl]);
 
-  const handleDeleteClick = (entryId: number, date: string) => {
+  const handleDeleteClick = (entryId: number | string, date: string) => {
+    // Don't allow deletion of media-only entries
+    if (typeof entryId === 'string' && entryId.startsWith('media_')) {
+      toast.error('Media-only entries cannot be deleted from here. Use the Timeline page to manage media.');
+      return;
+    }
+    
     setDeleteModal({
       isOpen: true,
-      entryId,
+      entryId: typeof entryId === 'number' ? entryId : null,
       entryDate: date
     });
   };
 
   const handleDeleteConfirm = async () => {
     if (!deleteModal.entryId) return;
+
+    // Don't allow deletion of media-only entries
+    if (typeof deleteModal.entryId === 'string' && deleteModal.entryId.startsWith('media_')) {
+      toast.error('Media-only entries cannot be deleted from here. Use the Timeline page to manage media.');
+      setDeleteModal({ isOpen: false, entryId: null, entryDate: '' });
+      return;
+    }
 
     setDeleting(true);
     try {
@@ -476,6 +547,15 @@ const Dashboard: React.FC = () => {
 
   const handleDeleteCancel = () => {
     setDeleteModal({ isOpen: false, entryId: null, entryDate: '' });
+  };
+
+  const openImageModal = (image: any) => {
+    const imageUrl = `/uploads/images/${image.filename}`;
+    setSelectedImage({ src: imageUrl, alt: image.description || 'Uploaded image' });
+  };
+
+  const closeImageModal = () => {
+    setSelectedImage(null);
   };
 
   const containerVariants = {
@@ -650,7 +730,7 @@ const Dashboard: React.FC = () => {
           </div>
         {loading ? (
           <div className="space-y-4">
-            {[...Array(3)].map((_, i) => (
+            {[...Array(5)].map((_, i) => (
               <div key={i} className="p-4 bg-night-surface rounded-lg">
                 <Skeleton className="h-4 w-1/3 mb-2" />
                 <Skeleton className="h-4 w-full" />
@@ -662,7 +742,7 @@ const Dashboard: React.FC = () => {
             {recentEntries.map((entry) => (
               <motion.div key={entry.id} variants={itemVariants}>
                 <div className="flex items-start justify-between p-4 bg-night-surface rounded-lg hover:bg-night-surface/80 transition-colors">
-                  <Link to={`/story/${entry.id}`} className="flex-1">
+                  <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm font-medium text-night-accent">
                         {entry.date ? formatDateTime(entry.date, {
@@ -677,14 +757,57 @@ const Dashboard: React.FC = () => {
                       {entry.ai_generated_story && <Star size={14} className="text-yellow-400" />}
                     </div>
                     <p className="text-night-text line-clamp-2">
-                      {entry.text_content || "View generated story..."}
+                      {entry.text_content || (entry.isMediaOnly ? "Media content" : "View generated story...")}
                     </p>
-                  </Link>
+                    {/* Show media indicators */}
+                    {(entry.hasImages || entry.hasAudio) && (
+                      <div className="mt-2">
+                        {/* Show actual images */}
+                        {entry.hasImages && (
+                          <div className="mb-2">
+                            <div className="flex items-center gap-2 mb-1 text-night-text-secondary">
+                              <Camera size={14} />
+                              <span className="text-xs">{entry.imageCount || 0} image{(entry.imageCount || 0) !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              {entry.images && entry.images.slice(0, 3).map((image: any, imgIndex: number) => (
+                                <div key={imgIndex} className="relative group cursor-pointer" onClick={() => openImageModal(image)}>
+                                  <img
+                                    src={`/uploads/images/${image.filename}`}
+                                    alt={image.description || 'Uploaded image'}
+                                    className="w-full h-16 object-cover rounded-md hover:opacity-80 transition-opacity"
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      target.style.display = 'none';
+                                    }}
+                                  />
+                                  {(entry.imageCount || 0) > 3 && imgIndex === 2 && (
+                                    <div className="absolute inset-0 bg-black bg-opacity-50 rounded-md flex items-center justify-center">
+                                      <span className="text-white text-xs font-medium">+{(entry.imageCount || 0) - 3}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* Show audio indicator */}
+                        {entry.hasAudio && (
+                          <div className="flex items-center gap-2 text-night-text-secondary">
+                            <Mic size={14} />
+                            <span className="text-xs">{entry.audioCount || 0} audio file{(entry.audioCount || 0) !== 1 ? 's' : ''}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => handleDeleteClick(entry.id, entry.date)}
                     className="text-red-500 hover:text-red-600 hover:bg-red-500/10 ml-2 flex-shrink-0"
+                    disabled={entry.isMediaOnly}
+                    title={entry.isMediaOnly ? "Media-only entries cannot be deleted from here. Use the Timeline page to manage media." : "Delete this entry"}
                   >
                     <Trash2 size={14} />
                   </Button>
@@ -705,6 +828,25 @@ const Dashboard: React.FC = () => {
         )}
         </div>
       </motion.div>
+      
+      {/* Image Modal */}
+      {selectedImage && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="relative max-w-4xl max-h-full">
+            <button
+              onClick={closeImageModal}
+              className="absolute top-4 right-4 bg-black bg-opacity-50 text-white rounded-full p-2 hover:bg-opacity-75 transition-all z-10"
+            >
+              <X size={24} />
+            </button>
+            <img
+              src={selectedImage.src}
+              alt={selectedImage.alt}
+              className="max-w-full max-h-full object-contain rounded-lg"
+            />
+          </div>
+        </div>
+      )}
       
       <ConfirmationModal
         isOpen={deleteModal.isOpen}
